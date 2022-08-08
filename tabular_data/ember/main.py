@@ -1,9 +1,8 @@
 import argparse
 import yaml
 import json
-# from alectio_sdk.flask_wrapper import Pipeline
 from alectio_sdk.sdk import Pipeline
-from processes_2 import train, test, infer, getdatasetstate
+from processes import train, test, infer, getdatasetstate
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", help="Path to config.yaml", required=True)
@@ -20,7 +19,7 @@ App = Pipeline(
     infer_fn=infer,
     getstate_fn=getdatasetstate,
     args=args,
-    token='6c2369bd4c4845a79a3dc560153dd4d4'
+    token='b0fc1fd174bb40cea4d261cbf869c066'
 )
 
 if __name__ == "__main__":
