@@ -10,4 +10,4 @@ model: "bert-base-uncased"
 dataset: "Reuters"
 batch_size: 16
 lr: 0.00002
-epochs: 7
+epochs: 5

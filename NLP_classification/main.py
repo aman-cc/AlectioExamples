@@ -15,23 +15,10 @@ parser.add_argument(
     help="Path to config.yaml",
 )
 
-parser.add_argument(
-    "--api_config",
-    default=os.path.join(cwd, "credentials.json"),
-    type=str,
-    help="Path to credentials.json",
-)
-
 args = parser.parse_args()
-
-# with open(args.api_config, "r") as stream:
-#     api_key = json.load(stream)["token"]
-#     logging.info("Setting Alectio API key.")
-#     os.environ["ALECTIO_API_KEY"] = api_key
 
 with open(args.config, "r") as stream:
     args = yaml.safe_load(stream)
-
 
 # put the train/test/infer processes into the constructor
 App = Pipeline(
@@ -41,7 +28,7 @@ App = Pipeline(
     infer_fn=infer,
     getstate_fn=getdatasetstate,
     args=args,
-    token='5dcf375a9f6f4a338355498ce6e78741'
+    token='5206e073dd9f4851afbae0481cc71a3e'
 )
 
 if __name__ == "__main__":
