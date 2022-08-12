@@ -25,7 +25,34 @@ classes = (
 
 DALI = False
 
-def train(args, labeled, resume_from, ckpt_file, yolo_args):
+def getdatasetstate(args={}):
+    return {k: k for k in range(10000)}
+
+class YoloArgs:
+    def __init__(self, args) -> None:
+        self.batch_size = args['batch_size']
+        self.data_dir = args['DATA_DIR']
+        self.epochs = args['train_epochs']
+        self.use_cuda = args['use_cuda']
+        self.results = os.path.join(os.getcwd(), "results.json")
+
+        self.dataset = "coco"
+        self.dali = False
+        self.period = 273
+        self.iters = -1
+        self.seed = 3
+        self.model_size = 'small'
+        self.img_sizes = [320, 416]
+        self.lr = 0.01
+        self.momentum = 0.937
+        self.weight_decay = 0.0005
+        self.print_freq = 100
+        self.world_size = 1
+        self.dist_url = "env://"
+        self.mosaic = None
+
+def train(args, labeled, resume_from, ckpt_file):
+    yolo_args = YoloArgs(args)
     yolo.init_distributed_mode(yolo_args)
     begin_time = time.time()
     print(time.asctime(time.localtime(begin_time)))
@@ -200,6 +227,10 @@ def train(args, labeled, resume_from, ckpt_file, yolo_args):
     print("\ntotal time of this training: {:.2f} s".format(time.time() - since))
     if start_epoch < yolo_args.epochs:
         print("already trained: {} epochs\n".format(trained_epoch))
+    return
+
+def test():
+    return
 
 def infer(args, unlabeled, ckpt_file):
     model = yolo.YOLOv5(80, img_sizes=672, score_thresh=0.3)
@@ -293,5 +324,5 @@ if __name__ == '__main__':
     yolo_args.use_cuda = args['use_cuda']
     yolo_args.results = os.path.join(os.getcwd(), "results.json")
 
-    train(args=args, labeled=list(range(100)), resume_from=None, ckpt_file='ckpt', yolo_args=yolo_args)
+    train(args=args, labeled=list(range(100)), resume_from=None, ckpt_file='ckpt')
     # infer(args=None, unlabeled=[0,2,3,10], ckpt_file="ckpts/yolov5s_official_2cf45318.pth")
