@@ -255,26 +255,18 @@ def infer(args, unlabeled, ckpt_file):
 
     return {"outputs": outputs_fin}
 
-with open("config.yaml", "r") as stream:
-    args = yaml.safe_load(stream)
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--use-cuda", action="store_true") # whether use the GPU
-    
     parser.add_argument("--dataset", default="coco") # style of dataset, choice: ["coco", "voc"]
-    parser.add_argument("--data-dir", default="/data/coco2017") # root directory of the dataset
     parser.add_argument("--dali", action="store_true") # NVIDIA's DataLoader, faster but without random affine
     parser.add_argument("--ckpt-path") # basic checkpoint path
     parser.add_argument("--results") # path where to save the evaluation results
     
     # you may not train the model for 273 epochs once, and want to split it into several tasks.
     # set epochs={the target epoch of each training task}
-    parser.add_argument("--epochs", type=int, default=1)
     
     # total epochs. iterations=500000, true batch size=64, so total epochs=272.93
     parser.add_argument("--period", type=int, default=273) 
-    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--iters", type=int, default=-1) # max iterations per epoch, -1 denotes an entire epoch
     
     parser.add_argument("--seed", type=int, default=3) # random seed
@@ -292,10 +284,14 @@ if __name__ == '__main__':
     parser.add_argument("--root") # gpu cloud platform special
     yolo_args = parser.parse_args()
     
-    if yolo_args.ckpt_path is None:
-        yolo_args.ckpt_path = "./checkpoint.pth"
-    if yolo_args.results is None:
-        yolo_args.results = os.path.join(os.path.dirname(yolo_args.ckpt_path), "results.json")
+    with open("config.yaml", "r") as stream:
+        args = yaml.safe_load(stream)
 
-    train(args=args, labeled=[156,509,603,1774], resume_from=None, ckpt_file='ckpt', yolo_args=yolo_args)
+    yolo_args.batch_size = args['batch_size']
+    yolo_args.data_dir = args['DATA_DIR']
+    yolo_args.epochs = args['train_epochs']
+    yolo_args.use_cuda = args['use_cuda']
+    yolo_args.results = os.path.join(os.getcwd(), "results.json")
+
+    train(args=args, labeled=list(range(100)), resume_from=None, ckpt_file='ckpt', yolo_args=yolo_args)
     # infer(args=None, unlabeled=[0,2,3,10], ckpt_file="ckpts/yolov5s_official_2cf45318.pth")
