@@ -7,7 +7,7 @@ import lightgbm as lgb
 import yaml
 import pandas as pd
 import numpy as np
-import ember
+from ember import read_vectorized_features
 import argparse
 import joblib
 import pickle
@@ -28,7 +28,7 @@ def get_classification_report(model, x_test, y_test):
 
 
 def preprocess_data(args):
-    X_train, y_train, X_test, y_test = ember.read_vectorized_features(
+    X_train, y_train, X_test, y_test = read_vectorized_features(
         args["DATA_DIR"] + "/ember_2017_2/"
     )
     X_orig_train = pd.DataFrame(X_train)
@@ -101,10 +101,8 @@ def test(args, ckpt_file):
     predictions = model.predict(X_test)
     targets = y_test
     acc_score = accuracy_score(y_true=y_test, y_pred=predictions)
-    print()
     print(" Test Classification Report: ")
     print(classification_report(y_true=y_test, y_pred=predictions))
-    print()
     print(" Accuracy: " + str(acc_score))
     # save prediction
     with open(os.path.join(args["EXPT_DIR"], "prediction.pkl"), "wb") as f:
