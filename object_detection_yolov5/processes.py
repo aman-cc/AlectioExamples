@@ -50,6 +50,7 @@ class YoloArgs:
         self.world_size = 1
         self.dist_url = "env://"
         self.mosaic = None
+        self.distributed = False
 
 def train(args, labeled, resume_from, ckpt_file):
     yolo_args = YoloArgs(args)
@@ -229,47 +230,46 @@ def train(args, labeled, resume_from, ckpt_file):
         print("already trained: {} epochs\n".format(trained_epoch))
     return
 
-def test():
-    return
+def test(args, ckpt_file):
+    yolo_args = YoloArgs(args)
+    yolo.setup_seed(yolo_args.seed)
 
-def infer(args, unlabeled, ckpt_file):
-    model = yolo.YOLOv5(80, img_sizes=672, score_thresh=0.3)
-    model.eval()
-
-    checkpoint = torch.load(ckpt_file)
-    model.load_state_dict(checkpoint)
-
-    use_cuda = False
-    device = torch.device("cuda" if torch.cuda.is_available() and use_cuda else "cpu")
-    dataset = "coco"
-    file_root = "../datasets/coco/images/val2017"
-    ann_file = "../datasets/coco/annotations/instances_val2017.json"
+    yolo.init_distributed_mode(yolo_args)
+    begin_time = time.time()
+    
+    device = torch.device("cuda" if torch.cuda.is_available() and yolo_args.use_cuda else "cpu")
     cuda = device.type == "cuda"
     if cuda: yolo.get_gpu_prop(show=True)
+    print("\ndevice: {}".format(device))
+    model_sizes = {"small": (0.33, 0.5), "medium": (0.67, 0.75), "large": (1, 1), "extreme": (1.33, 1.25)}
+    num_classes = len(classes)
+    model = yolo.YOLOv5(num_classes, model_sizes[yolo_args.model_size], img_sizes=yolo_args.img_sizes).to(device)
+    model.transformer.mosaic = yolo_args.mosaic
+
+    ckpt_path = os.path.join(args["EXPT_DIR"], 'ckpt')
+    ckpts = yolo.find_ckpts(ckpt_path)
+    checkpoint = torch.load(ckpts[-1], map_location=device) # load last checkpoint
+    model.load_state_dict(checkpoint['model'])
+    model.eval()
+    if cuda: torch.cuda.empty_cache()
+
+    dataset = "coco"
+    file_root = "data/coco/images/val2017"
+    ann_file = "data/coco/annotations/instances_val2017.json"
     ds = yolo.datasets(dataset, file_root, ann_file, train=True)
     dl = torch.utils.data.DataLoader(ds, shuffle=True, collate_fn=yolo.collate_wrapper, pin_memory=cuda)
     # DataPrefetcher behaves like PyTorch's DataLoader, but it outputs CUDA tensors
     d = yolo.DataPrefetcher(dl) if cuda else dl
     model.to(device)
 
-    if ckpt_file:
-        checkpoint = torch.load(ckpt_file, map_location=device)
-        if "ema" in checkpoint:
-            model.load_state_dict(checkpoint["ema"][0])
-            print(checkpoint["eval_info"])
-        else:
-            model.load_state_dict(checkpoint)
-        del checkpoint
-        if cuda: torch.cuda.empty_cache()
-        
     for p in model.parameters():
         p.requires_grad_(False)
 
+    iters = 100
 
-    iters = 10
-    outputs_fin = {}
+    predictions, labels = {}, {}
     for i, data in enumerate(d):
-        if i >= iters - 1:
+        if i >= iters:
             break
 
         images = data.images
@@ -277,52 +277,173 @@ def infer(args, unlabeled, ckpt_file):
         
         with torch.no_grad():
             results, losses = model(images)
+        
+        # TODO: Check output box format and pre-softmax
+        # TODO: Is object key contains label_id (ints upto 80 in case of COCO)
+        # Batch-size is 1
+        target_boxes = targets[0].get('boxes', [])
+        target_labels = targets[0].get('labels', [])
+        result_boxes = results[0].get('boxes', [])
+        result_labels = results[0].get('labels', [])
+        result_scores = results[0].get('scores', [])
+        result_logits = results[0].get('logits', [])
 
-        for j in range(len(results)):
-            outputs_fin[unlabeled[i]] = {}
-            outputs_fin[unlabeled[i]]["boxes"] = results[j]['boxes'].cpu().numpy().tolist()
-            outputs_fin[unlabeled[i]]["prediction"] = results[j]['labels'].cpu().numpy().tolist()
-            outputs_fin[unlabeled[i]]["pre_softmax"] = results[j]['logits'].cpu().numpy().tolist()
+        target_boxes, target_labels, result_boxes, result_labels, result_scores, result_logits \
+            = (item_.cpu().numpy().tolist() \
+            if item_ != [] else item_
+            for item_ in(target_boxes, target_labels, result_boxes, result_labels, result_scores, result_logits) \
+            )
 
-    return {"outputs": outputs_fin}
+        labels[i] = {
+            'boxes':target_boxes,
+            'objects':target_labels
+        }
+        predictions[i] = {
+            "boxes": result_boxes,
+            "objects": result_labels,
+            "scores": result_scores,
+            "pre_softmax": result_logits,
+        }
+
+    return {"predictions": predictions, "labels": labels}
+
+def infer(args, unlabeled, ckpt_file):
+    yolo_args = YoloArgs(args)
+    yolo.setup_seed(yolo_args.seed)
+
+    yolo.init_distributed_mode(yolo_args)
+    begin_time = time.time()
+    
+    device = torch.device("cuda" if torch.cuda.is_available() and yolo_args.use_cuda else "cpu")
+    cuda = device.type == "cuda"
+    if cuda: yolo.get_gpu_prop(show=True)
+    print("\ndevice: {}".format(device))
+    model_sizes = {"small": (0.33, 0.5), "medium": (0.67, 0.75), "large": (1, 1), "extreme": (1.33, 1.25)}
+    num_classes = len(classes)
+    model = yolo.YOLOv5(num_classes, model_sizes[yolo_args.model_size], img_sizes=yolo_args.img_sizes).to(device)
+    model.transformer.mosaic = yolo_args.mosaic
+
+    ckpt_path = os.path.join(args["EXPT_DIR"], 'ckpt')
+    ckpts = yolo.find_ckpts(ckpt_path)
+    checkpoint = torch.load(ckpts[-1], map_location=device) # load last checkpoint
+    model.load_state_dict(checkpoint['model'])
+    model.eval()
+    if cuda: torch.cuda.empty_cache()
+
+    dataset = "coco"
+    file_root = "data/coco/images/val2017"
+    ann_file = "data/coco/annotations/instances_val2017.json"
+    ds = yolo.datasets(dataset, file_root, ann_file, train=True)
+    dl = torch.utils.data.DataLoader(ds, shuffle=True, collate_fn=yolo.collate_wrapper, pin_memory=cuda)
+    # DataPrefetcher behaves like PyTorch's DataLoader, but it outputs CUDA tensors
+    d = yolo.DataPrefetcher(dl) if cuda else dl
+    model.to(device)
+
+    for p in model.parameters():
+        p.requires_grad_(False)
+
+    iters = 100
+
+    predictions, labels = {}, {}
+    for i, data in enumerate(d):
+        if i >= iters:
+            break
+
+        images = data.images
+        targets = data.targets
+        
+        with torch.no_grad():
+            results, losses = model(images)
+        
+        # TODO: Check output box format and pre-softmax
+        # TODO: Is object key contains label_id (ints upto 80 in case of COCO)
+        # Batch-size is 1
+        target_boxes = targets[0].get('boxes', [])
+        target_labels = targets[0].get('labels', [])
+        result_boxes = results[0].get('boxes', [])
+        result_labels = results[0].get('labels', [])
+        result_scores = results[0].get('scores', [])
+        result_logits = results[0].get('logits', [])
+
+        target_boxes, target_labels, result_boxes, result_labels, result_scores, result_logits \
+            = (item_.cpu().numpy().tolist() \
+            if item_ != [] else item_
+            for item_ in(target_boxes, target_labels, result_boxes, result_labels, result_scores, result_logits) \
+            )
+
+        labels[i] = {
+            'boxes':target_boxes,
+            'objects':target_labels
+        }
+        predictions[i] = {
+            "boxes": result_boxes,
+            "objects": result_labels,
+            "scores": result_scores,
+            "pre_softmax": result_logits,
+        }
+
+    return {"predictions": predictions, "labels": labels}
+
+
+
+
+    # model = yolo.YOLOv5(80, img_sizes=672, score_thresh=0.3)
+    # model.eval()
+
+    # checkpoint = torch.load(ckpt_file)
+    # model.load_state_dict(checkpoint)
+
+    # use_cuda = False
+    # device = torch.device("cuda" if torch.cuda.is_available() and use_cuda else "cpu")
+    # dataset = "coco"
+    # file_root = "../datasets/coco/images/val2017"
+    # ann_file = "../datasets/coco/annotations/instances_val2017.json"
+    # cuda = device.type == "cuda"
+    # if cuda: yolo.get_gpu_prop(show=True)
+    # ds = yolo.datasets(dataset, file_root, ann_file, train=True)
+    # dl = torch.utils.data.DataLoader(ds, shuffle=True, collate_fn=yolo.collate_wrapper, pin_memory=cuda)
+    # # DataPrefetcher behaves like PyTorch's DataLoader, but it outputs CUDA tensors
+    # d = yolo.DataPrefetcher(dl) if cuda else dl
+    # model.to(device)
+
+    # if ckpt_file:
+    #     checkpoint = torch.load(ckpt_file, map_location=device)
+    #     if "ema" in checkpoint:
+    #         model.load_state_dict(checkpoint["ema"][0])
+    #         print(checkpoint["eval_info"])
+    #     else:
+    #         model.load_state_dict(checkpoint)
+    #     del checkpoint
+    #     if cuda: torch.cuda.empty_cache()
+        
+    # for p in model.parameters():
+    #     p.requires_grad_(False)
+
+
+    # iters = 10
+    # outputs_fin = {}
+    # for i, data in enumerate(d):
+    #     if i >= iters - 1:
+    #         break
+
+    #     images = data.images
+    #     targets = data.targets
+        
+    #     with torch.no_grad():
+    #         results, losses = model(images)
+
+    #     for j in range(len(results)):
+    #         outputs_fin[unlabeled[i]] = {}
+    #         outputs_fin[unlabeled[i]]["boxes"] = results[j]['boxes'].cpu().numpy().tolist()
+    #         outputs_fin[unlabeled[i]]["prediction"] = results[j]['labels'].cpu().numpy().tolist()
+    #         outputs_fin[unlabeled[i]]["pre_softmax"] = results[j]['logits'].cpu().numpy().tolist()
+
+    # return {"outputs": outputs_fin}
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default="coco") # style of dataset, choice: ["coco", "voc"]
-    parser.add_argument("--dali", action="store_true") # NVIDIA's DataLoader, faster but without random affine
-    parser.add_argument("--ckpt-path") # basic checkpoint path
-    parser.add_argument("--results") # path where to save the evaluation results
-    
-    # you may not train the model for 273 epochs once, and want to split it into several tasks.
-    # set epochs={the target epoch of each training task}
-    
-    # total epochs. iterations=500000, true batch size=64, so total epochs=272.93
-    parser.add_argument("--period", type=int, default=273) 
-    parser.add_argument("--iters", type=int, default=-1) # max iterations per epoch, -1 denotes an entire epoch
-    
-    parser.add_argument("--seed", type=int, default=3) # random seed
-    parser.add_argument("--model-size", default="small") # choice: ["small", "medium", "large", "extreme"]
-    parser.add_argument('--img-sizes', nargs="+", type=int, default=[320, 416]) # range of input images' max_size during training
-    parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--momentum", type=float, default=0.937)
-    parser.add_argument("--weight-decay", type=float, default=0.0005)
-    
-    parser.add_argument("--mosaic", action="store_true") # mosaic data augmentaion, increasing ~2% AP, a little slow
-    parser.add_argument("--print-freq", type=int, default=100) # frequency of printing losses during training
-    parser.add_argument("--world-size", type=int, default=1) # total number of processes
-    parser.add_argument("--dist-url", default="env://") # distributed initial method
-    
-    parser.add_argument("--root") # gpu cloud platform special
-    yolo_args = parser.parse_args()
-    
-    with open("config.yaml", "r") as stream:
+    with open("./config.yaml", "r") as stream:
         args = yaml.safe_load(stream)
 
-    yolo_args.batch_size = args['batch_size']
-    yolo_args.data_dir = args['DATA_DIR']
-    yolo_args.epochs = args['train_epochs']
-    yolo_args.use_cuda = args['use_cuda']
-    yolo_args.results = os.path.join(os.getcwd(), "results.json")
-
-    train(args=args, labeled=list(range(100)), resume_from=None, ckpt_file='ckpt')
-    # infer(args=None, unlabeled=[0,2,3,10], ckpt_file="ckpts/yolov5s_official_2cf45318.pth")
+    # train(args=args, labeled=list(range(100)), resume_from=None, ckpt_file='ckpt')
+    # test(args=args, ckpt_file=os.path.join(args['EXPT_DIR'], 'ckpt'))
+    infer(args=None, unlabeled=[0,2,3,10])#, ckpt_file="ckpts/yolov5s_official_2cf45318.pth")

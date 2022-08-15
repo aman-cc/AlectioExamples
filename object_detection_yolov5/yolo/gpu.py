@@ -17,7 +17,7 @@ def get_gpu_prop(show=False):
         properties.append({
             "name": prop.name,
             "capability": [prop.major, prop.minor],
-            "total_momory": round(prop.total_memory / 1073741824, 2), # unit GB
+            "total_memory": round(prop.total_memory / 1073741824, 2), # unit GB
             "sm_count": prop.multi_processor_count
         })
        
