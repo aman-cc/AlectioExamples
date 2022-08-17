@@ -252,9 +252,11 @@ def test(args, ckpt_file):
     model.eval()
     if cuda: torch.cuda.empty_cache()
 
-    dataset = "coco"
-    file_root = "data/coco/images/val2017"
-    ann_file = "data/coco/annotations/instances_val2017.json"
+    dataset = yolo_args.dataset
+    file_root = os.path.join(yolo_args.data_dir, "images", "train2017")
+    ann_file = os.path.join(yolo_args.data_dir, "annotations", "instances_train2017.json")
+    if not os.path.isdir(args["EXPT_DIR"]):
+        os.makedirs(args["EXPT_DIR"], exist_ok=True)
     ds = yolo.datasets(dataset, file_root, ann_file, train=True)
     dl = torch.utils.data.DataLoader(ds, shuffle=True, collate_fn=yolo.collate_wrapper, pin_memory=cuda)
     # DataPrefetcher behaves like PyTorch's DataLoader, but it outputs CUDA tensors
@@ -264,7 +266,7 @@ def test(args, ckpt_file):
     for p in model.parameters():
         p.requires_grad_(False)
 
-    iters = 100
+    iters = 200
 
     predictions, labels = {}, {}
     for i, data in enumerate(d):
@@ -277,8 +279,6 @@ def test(args, ckpt_file):
         with torch.no_grad():
             results, losses = model(images)
 
-        # TODO: Check output box format and pre-softmax
-        # TODO: Is object key contains label_id (ints upto 80 in case of COCO)
         # Batch-size is 1
         target_boxes = targets[0].get('boxes', [])
         target_labels = targets[0].get('labels', [])
@@ -352,8 +352,6 @@ def infer(args, unlabeled, ckpt_file=None):
             results, losses = model(images)
         # with torch.no_grad():
         
-        # TODO: Check output box format and pre-softmax
-        # TODO: Is object key contains label_id (ints upto 80 in case of COCO)
         # Batch-size is 1
         target_boxes = targets[0].get('boxes', [])
         target_labels = targets[0].get('labels', [])
