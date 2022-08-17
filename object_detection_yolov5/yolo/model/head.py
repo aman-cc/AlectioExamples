@@ -107,12 +107,13 @@ class Head(nn.Module):
         logits = ps[:, [4]] * ps[:, 5:]
         indices, labels = torch.where(logits > self.score_thresh) # 4.94s
         ids, boxes, scores = ids[indices], boxes[indices], logits[indices, labels]
+        logits_req = logits[indices]
         
         results = []
         for i, im_s in enumerate(image_shapes): # 20.97s
             keep = torch.where(ids == i)[0] # 3.11s
             box, label, score = boxes[keep], labels[keep], scores[keep]
-            logits_cls = logits[keep]
+            logits_cls = logits_req[keep]
             #ws, hs = boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1] # 0.27s
             #keep = torch.where((ws >= self.min_size) & (hs >= self.min_size))[0] # 3.33s
             #boxes, objectness, logits = boxes[keep], objectness[keep], logits[keep] # 0.36s

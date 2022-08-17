@@ -312,7 +312,6 @@ def infer(args, unlabeled, ckpt_file=None):
     yolo.init_distributed_mode(yolo_args)
 
     database = os.path.join(args['EXPT_DIR'], f"infer_outputs_{args['cur_loop']}.db")
-    # TODO
     # database = os.path.join(args['EXPT_DIR'], f"infer_outputs_{0}.db")
     conn = create_database(database)
     
@@ -397,6 +396,6 @@ if __name__ == '__main__':
     with open("./config.yaml", "r") as stream:
         args = yaml.safe_load(stream)
 
-    train(args=args, labeled=list(range(100)), resume_from=None, ckpt_file='ckpt')
+    train(args=args, labeled=list(range(10000)), resume_from=None, ckpt_file='ckpt')
     test(args=args, ckpt_file=os.path.join(args['EXPT_DIR'], 'ckpt'))
-    infer(args=args, unlabeled=list(range(20)))#, ckpt_file="ckpts/yolov5s_official_2cf45318.pth")
+    infer(args=args, unlabeled=list(range(500)))#, ckpt_file="ckpts/yolov5s_official_2cf45318.pth")
