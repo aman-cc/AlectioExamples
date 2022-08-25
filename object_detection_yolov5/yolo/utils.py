@@ -35,14 +35,14 @@ def save_ckpt(model, optimizer, epochs, path, **kwargs):
         checkpoint[k] = v
         
     prefix, ext = os.path.splitext(path)
-    ckpt_path = "{}-{}{}".format(prefix, epochs, ext)
+    ckpt_path = "{}{}".format(prefix, ext)
     torch.save(checkpoint, ckpt_path)
 
     
 def find_ckpts(path):
     prefix, ext = os.path.splitext(path)
-    ckpts = glob.glob(prefix + "-*" + ext)
-    ckpts.sort(key=lambda x: int(re.search(r"-(\d+){}".format(ext), os.path.split(x)[1]).group(1)))
+    ckpts = glob.glob(prefix + "_*" + ext)
+    ckpts.sort(key=lambda x: int(re.search(r"_(\d+){}".format(ext), os.path.split(x)[1]).group(1)))
     return ckpts
 
 

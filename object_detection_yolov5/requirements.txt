@@ -1,5 +1,7 @@
+cython
 torch
 torchvision
-pycocotools
 matplotlib
 pyyaml
+pandas
+tqdm

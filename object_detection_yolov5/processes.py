@@ -7,6 +7,7 @@ import yolo
 import numpy as np
 
 from torchvision import transforms
+from tqdm import tqdm
 from alectio_sdk.sdk.sql_client import create_database, add_index
 
 # COCO dataset, 80 classes
@@ -25,7 +26,7 @@ classes = (
 DALI = False
 
 def getdatasetstate(args={}):
-    return {k: k for k in range(10000)}
+    return {k: k for k in range(100000)}
 
 class YoloArgs:
     def __init__(self, args) -> None:
@@ -78,6 +79,8 @@ def train(args, labeled, resume_from, ckpt_file):
     
     # The code below is for COCO 2017 dataset
     # If you're using VOC dataset or COCO 2012 dataset, remember to revise the code
+    if not os.path.isdir('data'):
+        raise Exception("COCO data not download. Please download COCO using './download_coco.sh'")
     splits = ("train2017", "val2017")
     file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
     ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
@@ -100,7 +103,10 @@ def train(args, labeled, resume_from, ckpt_file):
     else:
         transforms = yolo.RandomAffine((0, 0), (0.1, 0.1), (0.9, 1.1), (0, 0, 0, 0))
         dataset_train = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled)
-        dataset_test = yolo.datasets(yolo_args.dataset, file_roots[1], ann_files[1], train=True, labeled=labeled) # set train=True for eval
+        dataset_test = yolo.datasets(yolo_args.dataset, file_roots[1], ann_files[1], train=True) # set train=True for eval
+        # dataset_test = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled) # set train=True for eval
+        if len(dataset_train) < yolo_args.batch_size:
+            raise Exception(f"Very low number of samples. Available samples: {len(dataset_train)} | Batch size: {yolo_args.batch_size}")
 
         if yolo_args.distributed:
             sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train)
@@ -132,8 +138,6 @@ def train(args, labeled, resume_from, ckpt_file):
     
     # -------------------------------------------------------------------------- #
 
-    print(yolo_args)
-    
     model_sizes = {"small": (0.33, 0.5), "medium": (0.67, 0.75), "large": (1, 1), "extreme": (1.33, 1.25)}
     num_classes = len(d_train.dataset.classes)
     model = yolo.YOLOv5(num_classes, model_sizes[yolo_args.model_size], img_sizes=yolo_args.img_sizes).to(device)
@@ -169,27 +173,30 @@ def train(args, labeled, resume_from, ckpt_file):
     ema = yolo.ModelEMA(model)
     ema_without_ddp = ema.ema.module if yolo_args.distributed else ema.ema
     
-    start_epoch = 0
+    epochs = args["train_epochs"]
 
-    ckpt_path = os.path.join(args["EXPT_DIR"], 'ckpt')
-    ckpts = yolo.find_ckpts(ckpt_path)
-    if ckpts:
-        checkpoint = torch.load(ckpts[-1], map_location=device) # load last checkpoint
+    # ckpt_path = os.path.join(args["EXPT_DIR"], 'ckpt')
+    # ckpts = yolo.find_ckpts(ckpt_path)
+    ckpt_path = os.path.join(args["EXPT_DIR"], ckpt_file)
+    prev_epochs = 0
+
+    if resume_from is not None:
+        ckpt_res_path = os.path.join(args["EXPT_DIR"], resume_from)
+        checkpoint = torch.load(ckpt_res_path, map_location=device) # load last checkpoint
         model_without_ddp.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
-        start_epoch = checkpoint["epochs"]
+        prev_epochs = checkpoint["epochs"]
         ema_without_ddp.load_state_dict(checkpoint["ema"][0])
         ema.updates = checkpoint["ema"][1]
         del checkpoint
         if cuda: torch.cuda.empty_cache()
+    else:
+        if os.path.isfile(os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')):
+            pre_trained_ckpt_path = os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')
+            checkpoint = torch.load(pre_trained_ckpt_path, map_location=device) # load last checkpoint
+            model_without_ddp.load_state_dict(checkpoint)
 
-    since = time.time()
-    print("\nalready trained: {} epochs; to {} epochs".format(start_epoch, yolo_args.epochs))
-    
-    # ------------------------------- train ------------------------------------ #
-        
-    for epoch in range(start_epoch, yolo_args.epochs):
-        print("\nepoch: {}".format(epoch + 1))
+    for epoch in tqdm(range(epochs)):
         
         if not DALI and yolo_args.distributed:
             sampler_train.set_epoch(epoch)
@@ -204,29 +211,12 @@ def train(args, labeled, resume_from, ckpt_file):
         eval_output, iter_eval = yolo.evaluate(ema.ema, d_test, device, yolo_args)
         B = time.time() - B
 
-        trained_epoch = epoch + 1
-
         if yolo.get_rank() == 0:
             print("training: {:.2f} s, evaluation: {:.2f} s".format(A, B))
             yolo.collect_gpu_info("yolov5s", [yolo_args.batch_size / iter_train, yolo_args.batch_size / iter_eval])
             print(eval_output.get_AP())
             
-            yolo.save_ckpt(
-                model_without_ddp, optimizer, trained_epoch, ckpt_path,
-                eval_info=str(eval_output), ema=(ema_without_ddp.state_dict(), ema.updates))
-
-            # It will create many checkpoint files during training, so delete some.
-            ckpts = yolo.find_ckpts(ckpt_path)
-            remaining = 60
-            if len(ckpts) > remaining:
-                for i in range(len(ckpts) - remaining):
-                    os.system("rm {}".format(ckpts[i]))
-        
-    # -------------------------------------------------------------------------- #
-
-    print("\ntotal time of this training: {:.2f} s".format(time.time() - since))
-    if start_epoch < yolo_args.epochs:
-        print("already trained: {} epochs\n".format(trained_epoch))
+    yolo.save_ckpt(model_without_ddp, optimizer, prev_epochs + epochs, ckpt_path, eval_info=str(eval_output), ema=(ema_without_ddp.state_dict(), ema.updates))
     return
 
 def test(args, ckpt_file):
@@ -245,16 +235,16 @@ def test(args, ckpt_file):
     model = yolo.YOLOv5(num_classes, model_sizes[yolo_args.model_size], img_sizes=yolo_args.img_sizes).to(device)
     model.transformer.mosaic = yolo_args.mosaic
 
-    ckpt_path = os.path.join(args["EXPT_DIR"], 'ckpt')
-    ckpts = yolo.find_ckpts(ckpt_path)
-    checkpoint = torch.load(ckpts[-1], map_location=device) # load last checkpoint
+    ckpt_path = os.path.join(args["EXPT_DIR"], ckpt_file)
+    # ckpts = yolo.find_ckpts(ckpt_path)
+    checkpoint = torch.load(ckpt_path, map_location=device) # load last checkpoint
     model.load_state_dict(checkpoint['model'])
     model.eval()
     if cuda: torch.cuda.empty_cache()
 
     dataset = yolo_args.dataset
-    file_root = os.path.join(yolo_args.data_dir, "images", "train2017")
-    ann_file = os.path.join(yolo_args.data_dir, "annotations", "instances_train2017.json")
+    file_root = os.path.join(yolo_args.data_dir, "images", "val2017")
+    ann_file = os.path.join(yolo_args.data_dir, "annotations", "instances_val2017.json")
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
     ds = yolo.datasets(dataset, file_root, ann_file, train=True)
@@ -324,16 +314,18 @@ def infer(args, unlabeled, ckpt_file=None):
     model = yolo.YOLOv5(num_classes, model_sizes[yolo_args.model_size], img_sizes=yolo_args.img_sizes).to(device)
     model.transformer.mosaic = yolo_args.mosaic
 
-    ckpt_path = os.path.join(args["EXPT_DIR"], 'ckpt')
-    ckpts = yolo.find_ckpts(ckpt_path)
-    checkpoint = torch.load(ckpts[-1], map_location=device) # load last checkpoint
+    ckpt_path = os.path.join(args["EXPT_DIR"], ckpt_file)
+    # ckpts = yolo.find_ckpts(ckpt_path)
+    checkpoint = torch.load(ckpt_path, map_location=device) # load last checkpoint
     model.load_state_dict(checkpoint['model'])
     model.eval()
     if cuda: torch.cuda.empty_cache()
 
-    dataset = "coco"
-    file_root = "data/coco/images/train2017"
-    ann_file = "data/coco/annotations/instances_train2017.json"
+    dataset = yolo_args.dataset
+    file_root = os.path.join(yolo_args.data_dir, "images", "train2017")
+    ann_file = os.path.join(yolo_args.data_dir, "annotations", "instances_train2017.json")
+    if not os.path.isdir(args["EXPT_DIR"]):
+        os.makedirs(args["EXPT_DIR"], exist_ok=True)
     ds = yolo.datasets(dataset, file_root, ann_file, train=True, labeled=unlabeled)
     dl = torch.utils.data.DataLoader(ds, shuffle=True, collate_fn=yolo.collate_wrapper, pin_memory=cuda)
     # DataPrefetcher behaves like PyTorch's DataLoader, but it outputs CUDA tensors
@@ -343,6 +335,7 @@ def infer(args, unlabeled, ckpt_file=None):
     for p in model.parameters():
         p.requires_grad_(False)
 
+    db_null_flag = True
     predictions, labels = {}, {}
     for i, data in enumerate(d):
         images = data.images
@@ -378,22 +371,26 @@ def infer(args, unlabeled, ckpt_file=None):
         }
 
         if result_logits:
+            db_null_flag = False
             res_logits_np = np.array(result_logits)
-        else:
-            # res_logits_np = np.array([0])
-            res_logits_np = np.array([0]*len(classes))
-        # added_ind = unlabeled.pop(0)
-        added_ind = unlabeled[i]
-        # add row to db
-        add_index(conn, added_ind, res_logits_np)
+            # else:
+            #     # res_logits_np = np.array([0])
+            #     res_logits_np = np.array([0]*len(classes))
+            # added_ind = unlabeled.pop(0)
+            added_ind = unlabeled[i]
+            # add row to db
+            add_index(conn, added_ind, res_logits_np)
 
+    if db_null_flag:
+        add_index(conn, 0, np.array([0]*len(classes)))
     conn.close()
+
     return {'labels':labels, 'predictions':predictions}
 
 if __name__ == '__main__':
     with open("./config.yaml", "r") as stream:
         args = yaml.safe_load(stream)
 
-    train(args=args, labeled=list(range(10000)), resume_from=None, ckpt_file='ckpt')
-    test(args=args, ckpt_file=os.path.join(args['EXPT_DIR'], 'ckpt'))
-    infer(args=args, unlabeled=list(range(500)))#, ckpt_file="ckpts/yolov5s_official_2cf45318.pth")
+    train(args=args, labeled=list(range(128)), resume_from='ckpt', ckpt_file='ckpt')
+    test(args=args, ckpt_file='ckpt')
+    infer(args=args, unlabeled=list(range(128)))
