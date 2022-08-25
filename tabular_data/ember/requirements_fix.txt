@@ -1,4 +1,0 @@
-pandas
-lightgbm
-click
-git+https://github.com/elastic/ember.git
