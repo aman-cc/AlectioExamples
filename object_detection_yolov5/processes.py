@@ -4,24 +4,12 @@ import yaml
 import os
 import torch
 import yolo
+import json
 import numpy as np
 
 from torchvision import transforms
 from tqdm import tqdm
 from alectio_sdk.sdk.sql_client import create_database, add_index
-
-# COCO dataset, 80 classes
-classes = (
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
-    "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
-    "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
-    "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
-    "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
-    "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
-    "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair",
-    "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
-    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book",
-    "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush")
 
 DALI = False
 
@@ -51,6 +39,10 @@ class YoloArgs:
         self.dist_url = "env://"
         self.mosaic = None
         self.distributed = False
+        self.classes = None
+        if os.path.isfile('labels.json'):
+            with open('labels.json', 'r') as f:
+                self.classes = json.load(f)
 
 def train(args, labeled, resume_from, ckpt_file):
     yolo_args = YoloArgs(args)
@@ -231,7 +223,7 @@ def test(args, ckpt_file):
     if cuda: yolo.get_gpu_prop(show=True)
     print("\ndevice: {}".format(device))
     model_sizes = {"small": (0.33, 0.5), "medium": (0.67, 0.75), "large": (1, 1), "extreme": (1.33, 1.25)}
-    num_classes = len(classes)
+    num_classes = len(yolo_args.classes)
     model = yolo.YOLOv5(num_classes, model_sizes[yolo_args.model_size], img_sizes=yolo_args.img_sizes).to(device)
     model.transformer.mosaic = yolo_args.mosaic
 
@@ -256,13 +248,8 @@ def test(args, ckpt_file):
     for p in model.parameters():
         p.requires_grad_(False)
 
-    iters = 200
-
     predictions, labels = {}, {}
     for i, data in enumerate(d):
-        if i >= iters:
-            break
-
         images = data.images
         targets = data.targets
 
@@ -310,7 +297,7 @@ def infer(args, unlabeled, ckpt_file=None):
     if cuda: yolo.get_gpu_prop(show=True)
     print("\ndevice: {}".format(device))
     model_sizes = {"small": (0.33, 0.5), "medium": (0.67, 0.75), "large": (1, 1), "extreme": (1.33, 1.25)}
-    num_classes = len(classes)
+    num_classes = len(yolo_args.classes)
     model = yolo.YOLOv5(num_classes, model_sizes[yolo_args.model_size], img_sizes=yolo_args.img_sizes).to(device)
     model.transformer.mosaic = yolo_args.mosaic
 
@@ -382,7 +369,7 @@ def infer(args, unlabeled, ckpt_file=None):
             add_index(conn, added_ind, res_logits_np)
 
     if db_null_flag:
-        add_index(conn, 0, np.array([0]*len(classes)))
+        add_index(conn, 0, np.array([0]*len(yolo_args.classes)))
     conn.close()
 
     return {'labels':labels, 'predictions':predictions}
