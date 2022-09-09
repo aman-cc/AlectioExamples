@@ -13,8 +13,6 @@ class MushroomDataset(Dataset):
 
         labels = df.iloc[:, :1]  # 1 is edible and 0 is poisonous
         data = df.iloc[:, 2:]
-        print("Data shape:", data.shape)
-        print("Labels shape:", labels.shape)
 
         self.data = data
         self.labels = labels

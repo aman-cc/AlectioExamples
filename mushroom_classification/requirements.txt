@@ -1,6 +1,6 @@
-tqdm
-torch
+torch~=1.12.1
 torchvision
+tqdm
 scipy
 pandas
 pyyaml
