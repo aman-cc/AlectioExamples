@@ -1,9 +1,6 @@
 import torch
-import torchvision
-import torchvision.transforms as transforms
 import pandas as pd
-import numpy as np
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 
 class MushroomDataset(Dataset):

@@ -1,6 +1,6 @@
 import argparse
 import yaml, json
-from alectio_sdk.flask_wrapper import Pipeline
+from alectio_sdk.sdk import Pipeline
 from processes import train, test, infer, getdatasetstate
 
 parser = argparse.ArgumentParser()
@@ -11,7 +11,7 @@ with open(args.config, "r") as stream:
     args = yaml.safe_load(stream)
 
 # put the train/test/infer processes into the constructor
-app = Pipeline(
+App = Pipeline(
     name=args["exp_name"],
     train_fn=train,
     test_fn=test,
@@ -24,4 +24,4 @@ app = Pipeline(
 if __name__ == "__main__":
     # payload = json.load(open(args["sample_payload"], "r"))
     # app._one_loop(args=args, payload=payload)
-    app(debug=True)
+    App()
