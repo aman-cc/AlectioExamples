@@ -1,19 +1,13 @@
 from tqdm import tqdm
 import torch
-import torchvision
-import torchvision.transforms as transforms
-import pandas as pd
-import numpy as np
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import DataLoader, Subset
 from mushroom_data import MushroomDataset
 from model import NeuralNet
 import torch.optim as optim
 import os
 import yaml
 import argparse
-import torch.nn.functional as F
 from scipy.special import logit as logit_fn
-from scipy.special import expit
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -207,11 +201,9 @@ def infer(args, unlabeled, ckpt_file):
                     prediction = 1
                 predictions[unlabeled[predix]]["prediction"] = prediction
 
-                predictions[unlabeled[predix]]["logits"] = [
-                    [
-                        logit_fn(logit.cpu().numpy()[0]),
-                        logit_fn(1 - logit.cpu().numpy()[0]),
-                    ]
+                predictions[unlabeled[predix]]["pre_softmax"] = [
+                    logit_fn(logit.cpu().numpy()[0]),
+                    logit_fn(1 - logit.cpu().numpy()[0]),
                 ]
 
                 predix += 1
