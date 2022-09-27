@@ -6,8 +6,9 @@ import torch
 import yolo
 import json
 import numpy as np
+import hashlib
+import pandas as pd
 
-from torchvision import transforms
 from tqdm import tqdm
 from alectio_sdk.sdk.sql_client import create_database, add_index
 
@@ -44,8 +45,36 @@ class YoloArgs:
             with open('labels.json', 'r') as f:
                 self.classes = json.load(f)
 
+def generate_file_md5(file_path, blocksize=2**20):
+    m = hashlib.md5()
+    with open(file_path, "rb" ) as f:
+        while True:
+            buf = f.read(blocksize)
+            if not buf:
+                break
+            m.update(buf)
+    return m.hexdigest()
+
+def create_datamap_yaml(data_dir='data'):
+    file_list = [os.path.join(path, name) for path, subdirs, files in os.walk(data_dir) for name in files]
+    # TODO: remove limit
+    file_list = file_list[:128]
+
+    # Create hash and indices
+    file_hashes_list = [generate_file_md5(file) for file in file_list]
+    file_indices = list(range(len(file_list)))
+    datamap = dict(filename=file_list, hash=file_hashes_list, index=file_indices)
+    datamap_df = pd.DataFrame(datamap)
+
+    # Dump datamap to disk
+    datamap_df.to_csv('datamap.csv', index=False)
+    # with open("datamap.yaml", "w") as f:
+    #     yaml.safe_dump(datamap, f)
+    return
+
 def train(args, labeled, resume_from, ckpt_file):
     yolo_args = YoloArgs(args)
+    create_datamap_yaml(yolo_args.data_dir)
     yolo.setup_seed(yolo_args.seed)
     yolo.init_distributed_mode(yolo_args)
     begin_time = time.time()
@@ -95,7 +124,7 @@ def train(args, labeled, resume_from, ckpt_file):
     else:
         transforms = yolo.RandomAffine((0, 0), (0.1, 0.1), (0.9, 1.1), (0, 0, 0, 0))
         dataset_train = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled)
-        dataset_test = yolo.datasets(yolo_args.dataset, file_roots[1], ann_files[1], train=True) # set train=True for eval
+        dataset_test = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=list(range(512))) # set train=True for eval
         # dataset_test = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled) # set train=True for eval
         if len(dataset_train) < yolo_args.batch_size:
             raise Exception(f"Very low number of samples. Available samples: {len(dataset_train)} | Batch size: {yolo_args.batch_size}")
@@ -378,6 +407,6 @@ if __name__ == '__main__':
     with open("./config.yaml", "r") as stream:
         args = yaml.safe_load(stream)
 
-    train(args=args, labeled=list(range(128)), resume_from='ckpt', ckpt_file='ckpt')
-    test(args=args, ckpt_file='ckpt')
-    infer(args=args, unlabeled=list(range(128)))
+    train(args=args, labeled=list(range(512)), ckpt_file='ckpt', resume_from=None)
+    # test(args=args, ckpt_file='ckpt')
+    # infer(args=args, unlabeled=list(range(128)))
