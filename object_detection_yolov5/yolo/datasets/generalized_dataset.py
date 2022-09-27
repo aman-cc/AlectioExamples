@@ -11,11 +11,10 @@ class GeneralizedDataset:
     Main class for Generalized Dataset.
     """
     
-    def __init__(self, max_workers=2, verbose=False, max_len=-1):
+    def __init__(self, max_workers=2, verbose=False):
         self.max_workers = max_workers
         self.verbose = verbose
-        self.max_len = max_len
-            
+
     def __getitem__(self, i):
         img_id = self.ids[i]
         image = self.get_image(img_id) # PIL Image
@@ -24,25 +23,26 @@ class GeneralizedDataset:
             image, target = self.transforms(image, target)
         image = transforms.ToTensor()(image)
         return image, target   
-    
+
     def __len__(self):
         return len(self.ids)
-    
+
     def check_dataset(self, checked_id_file):
         """
         use multithreads to accelerate the process.
         check the dataset to avoid some problems listed in method `_check`.
         """
         
-        if os.path.exists(checked_id_file):
-            info = [line.strip().split(", ") for line in open(checked_id_file)]
-            self.ids, self.aspect_ratios = zip(*info)
-            if self.max_len != -1:
-                self.ids = self.ids[:self.max_len]
-                self.aspect_ratios = self.aspect_ratios[:self.max_len]
-            return
-        
         since = time.time()
+        # if os.path.exists(checked_id_file):
+        #     info = [line.strip().split(", ") for line in open(checked_id_file)]
+        #     self.ids, self.aspect_ratios = zip(*info)
+        #     # if self.max_len != -1:
+        #     #     self.ids = self.ids[:self.max_len]
+        #     #     self.aspect_ratios = self.aspect_ratios[:self.max_len]
+        #     print("{} samples are OK; {:.1f} seconds".format(len(self), time.time() - since))
+        #     return
+        
         print("Checking the dataset...")
         
         executor = ThreadPoolExecutor(max_workers=self.max_workers)
@@ -80,7 +80,5 @@ class GeneralizedDataset:
                 out.append((img_id, self._aspect_ratios[i]))
             except AssertionError as e:
                 if self.verbose:
-                    print(img_id, e)
+                    print(f'Ignoring image_id: {img_id, e}')
         return out
-
-                    

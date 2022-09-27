@@ -29,10 +29,17 @@ cd log
 wget 'https://github.com/Okery/YOLOv5-PyTorch/releases/download/v0.3/yolov5s_official_2cf45318.pth'
 ```
 
-## 4. Start training with Alectio SDK
+## 4. [Optional] Fine-tune on custom dataset
+- Update labels.json with your custom labels.
+- Split train, val images and place images inside `data/images/train2017` and `data/images/val2017`.
+- Place train labels inside `data/annotations` in COCO format JSON with filename: `data/annotations/instances_train2017.json`
+- Place val labels inside `data/annotations` in COCO format JSON with filename: `data/annotations/instances_val2017.json`
+- Make sure number of samples are more than you batch size (in config).
+
+## 5. Start training with Alectio SDK
 - Place token inside main.py
 - Run `python main.py`
 
 ## Misc
-- Number of training samples = 118287
-- Number of test samples = 40670
+- Number of COCO training samples = 118287
+- Number of COCO test samples = 40670
