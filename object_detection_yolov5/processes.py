@@ -41,6 +41,7 @@ class YoloArgs:
         self.mosaic = None
         self.distributed = False
         self.classes = None
+        self.amp = False
         if os.path.isfile('labels.json'):
             with open('labels.json', 'r') as f:
                 self.classes = json.load(f)
@@ -87,7 +88,6 @@ def train(args, labeled, resume_from, ckpt_file):
     print("\ndevice: {}".format(device))
     
     # # Automatic mixed precision
-    yolo_args.amp = False
     if cuda and torch.__version__ >= "1.6.0":
         capability = torch.cuda.get_device_capability()[0]
         if capability >= 7: # 7 refers to RTX series GPUs, e.g. 2080Ti, 2080, Titan RTX
@@ -103,9 +103,10 @@ def train(args, labeled, resume_from, ckpt_file):
     # If you're using VOC dataset or COCO 2012 dataset, remember to revise the code
     if not os.path.isdir('data'):
         raise Exception("COCO data not download. Please download COCO using './download_coco.sh'")
-    # splits = ("train2017", "val2017")
-    file_roots = [os.path.join(yolo_args.data_dir, 'JPEGImages')] * 2
-    ann_files = [os.path.join(yolo_args.data_dir, "out.json")] * 2
+    splits = ("train2017", "val2017")
+    file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
+    ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
+
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
 
@@ -125,7 +126,7 @@ def train(args, labeled, resume_from, ckpt_file):
     else:
         transforms = yolo.RandomAffine((0, 0), (0.1, 0.1), (0.9, 1.1), (0, 0, 0, 0))
         dataset_train = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled)
-        dataset_test = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=list(range(512))) # set train=True for eval
+        dataset_test = yolo.datasets(yolo_args.dataset, file_roots[1], ann_files[1], train=True) # set train=True for eval
         # dataset_test = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled) # set train=True for eval
         if len(dataset_train) < yolo_args.batch_size:
             raise Exception(f"Very low number of samples. Available samples: {len(dataset_train)} | Batch size: {yolo_args.batch_size}")
@@ -216,18 +217,18 @@ def train(args, labeled, resume_from, ckpt_file):
         if os.path.isfile(os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')):
             pre_trained_ckpt_path = os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')
             checkpoint = torch.load(pre_trained_ckpt_path, map_location=device) # load last checkpoint
-
-            remove_head_list = [
-                'head.predictor.mlp.0.weight',
-                'head.predictor.mlp.0.bias',
-                'head.predictor.mlp.1.weight',
-                'head.predictor.mlp.1.bias',
-                'head.predictor.mlp.2.weight',
-                'head.predictor.mlp.2.bias',
-            ]
-            for item_ in remove_head_list:
-                checkpoint.pop(item_)
-                # checkpoint["ema"][0].pop(item_)
+            if num_classes != 80:   # Different dataset tuning
+                # Remove some node's weights from loading
+                remove_head_list = [
+                    'head.predictor.mlp.0.weight',
+                    'head.predictor.mlp.0.bias',
+                    'head.predictor.mlp.1.weight',
+                    'head.predictor.mlp.1.bias',
+                    'head.predictor.mlp.2.weight',
+                    'head.predictor.mlp.2.bias',
+                ]
+                for item_ in remove_head_list:
+                    checkpoint.pop(item_)
             model_without_ddp.load_state_dict(checkpoint, strict=False)
 
     for epoch in tqdm(range(epochs)):

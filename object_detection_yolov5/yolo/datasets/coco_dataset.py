@@ -28,11 +28,11 @@ class COCODataset(GeneralizedDataset):
         
         dirname, split = os.path.split(file_root)
         checked_id_file = os.path.join(dirname, "checked_{}.txt".format(split))
-        if train:
-            if not os.path.exists(checked_id_file):
-                self._aspect_ratios = [v["width"] / v["height"] for v in self.coco.imgs.values()]
-            self.check_dataset(checked_id_file)
-        
+        # if train:
+            # if not os.path.exists(checked_id_file):
+        self._aspect_ratios = [v["width"] / v["height"] for v in self.coco.imgs.values()]
+        self.check_dataset(checked_id_file)
+
     def get_image(self, img_id):
         img_id = int(img_id)
         img_info = self.coco.imgs[img_id]

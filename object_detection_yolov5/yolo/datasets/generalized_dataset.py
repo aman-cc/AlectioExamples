@@ -34,15 +34,16 @@ class GeneralizedDataset:
         check the dataset to avoid some problems listed in method `_check`.
         """
         
+        since = time.time()
         if os.path.exists(checked_id_file):
             info = [line.strip().split(", ") for line in open(checked_id_file)]
             self.ids, self.aspect_ratios = zip(*info)
             if self.max_len != -1:
                 self.ids = self.ids[:self.max_len]
                 self.aspect_ratios = self.aspect_ratios[:self.max_len]
+            print("{} samples are OK; {:.1f} seconds".format(len(self), time.time() - since))
             return
         
-        since = time.time()
         print("Checking the dataset...")
         
         executor = ThreadPoolExecutor(max_workers=self.max_workers)
