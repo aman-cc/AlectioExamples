@@ -105,7 +105,7 @@ def train(args, labeled, resume_from, ckpt_file):
         raise Exception("COCO data not download. Please download COCO using './download_coco.sh'")
     # splits = ("train2017", "val2017")
     file_roots = [os.path.join(yolo_args.data_dir, 'JPEGImages')] * 2
-    ann_files = [os.path.join(yolo_args.data_dir, "output.json")] * 2
+    ann_files = [os.path.join(yolo_args.data_dir, "out.json")] * 2
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
 
@@ -216,7 +216,19 @@ def train(args, labeled, resume_from, ckpt_file):
         if os.path.isfile(os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')):
             pre_trained_ckpt_path = os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')
             checkpoint = torch.load(pre_trained_ckpt_path, map_location=device) # load last checkpoint
-            model_without_ddp.load_state_dict(checkpoint)
+
+            remove_head_list = [
+                'head.predictor.mlp.0.weight',
+                'head.predictor.mlp.0.bias',
+                'head.predictor.mlp.1.weight',
+                'head.predictor.mlp.1.bias',
+                'head.predictor.mlp.2.weight',
+                'head.predictor.mlp.2.bias',
+            ]
+            for item_ in remove_head_list:
+                checkpoint.pop(item_)
+                # checkpoint["ema"][0].pop(item_)
+            model_without_ddp.load_state_dict(checkpoint, strict=False)
 
     for epoch in tqdm(range(epochs)):
         
