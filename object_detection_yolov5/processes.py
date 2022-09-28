@@ -58,6 +58,7 @@ def generate_file_md5(file_path, blocksize=2**20):
 def create_datamap_yaml(data_dir='data'):
     file_list = [os.path.join(path, name) for path, subdirs, files in os.walk(data_dir) for name in files]
     # TODO: remove limit
+    # TODO: add filename hash as well, remove index?
     file_list = file_list[:128]
 
     # Create hash and indices
@@ -102,9 +103,9 @@ def train(args, labeled, resume_from, ckpt_file):
     # If you're using VOC dataset or COCO 2012 dataset, remember to revise the code
     if not os.path.isdir('data'):
         raise Exception("COCO data not download. Please download COCO using './download_coco.sh'")
-    splits = ("train2017", "val2017")
-    file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
-    ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
+    # splits = ("train2017", "val2017")
+    file_roots = [os.path.join(yolo_args.data_dir, 'JPEGImages')] * 2
+    ann_files = [os.path.join(yolo_args.data_dir, "output.json")] * 2
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
 

@@ -47,8 +47,8 @@ class COCODataset(GeneralizedDataset):
         return new_box # new_box format: (xmin, ymin, xmax, ymax)
         
     def get_target(self, img_id):
+        ann_ids = self.coco.getAnnIds([img_id])
         img_id = int(img_id)
-        ann_ids = self.coco.getAnnIds(img_id)
         anns = self.coco.loadAnns(ann_ids)
         boxes = []
         labels = []
