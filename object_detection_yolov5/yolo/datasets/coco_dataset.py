@@ -6,9 +6,9 @@ from .generalized_dataset import GeneralizedDataset
        
         
 class COCODataset(GeneralizedDataset):
-    def __init__(self, file_root, ann_file, train=False, transforms=None, labeled=[-1]):
-        max_len = len(labeled) if labeled != [-1] else -1
-        super().__init__(max_len=max_len)
+    def __init__(self, file_root, ann_file, train=False, transforms=None, index_list=[-1]):
+        # max_len = len(labeled) if labeled != [-1] else -1
+        super().__init__()
         from pycocotools.coco import COCO
         
         self.file_root = file_root
@@ -16,9 +16,9 @@ class COCODataset(GeneralizedDataset):
         self.transforms = transforms
         
         self.coco = COCO(ann_file)
-        self.ids = tuple(str(k) for k in self.coco.imgs)
-        self.ids = self.ids[:max_len]
-        
+        self.ids = tuple(str(k) for k in self.coco.imgs) if index_list == [-1] else index_list
+        # self.ids = self.ids[:max_len]
+
         self._classes = {k: v["name"] for k, v in self.coco.cats.items()} # original classes
         self.classes = tuple(self.coco.cats[k]["name"] for k in sorted(self.coco.cats)) # dense classes
         
@@ -39,6 +39,11 @@ class COCODataset(GeneralizedDataset):
         image = Image.open(os.path.join(self.file_root, img_info["file_name"]))
         return image.convert("RGB") # avoid grey image
     
+    def get_image_filename(self, img_id):
+        img_id = int(img_id)
+        img_info = self.coco.imgs[img_id]
+        return img_info["file_name"]
+
     @staticmethod
     def convert_to_xyxy(box): # box format: (xmin, ymin, w, h)
         x1, y1, w, h = box.T
@@ -73,5 +78,3 @@ class COCODataset(GeneralizedDataset):
 
         target = dict(image_id=torch.tensor([img_id]), boxes=boxes, labels=labels)
         return target
-    
-    
