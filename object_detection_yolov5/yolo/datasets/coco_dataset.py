@@ -39,10 +39,12 @@ class COCODataset(GeneralizedDataset):
         image = Image.open(os.path.join(self.file_root, img_info["file_name"]))
         return image.convert("RGB") # avoid grey image
     
-    def get_image_filename(self, img_id):
+    def get_image_info(self, img_id):
         img_id = int(img_id)
         img_info = self.coco.imgs[img_id]
-        return img_info["file_name"]
+        ann_ids = self.coco.getAnnIds(img_id)
+        anns = self.coco.loadAnns(ann_ids)
+        return img_info, anns
 
     @staticmethod
     def convert_to_xyxy(box): # box format: (xmin, ymin, w, h)
