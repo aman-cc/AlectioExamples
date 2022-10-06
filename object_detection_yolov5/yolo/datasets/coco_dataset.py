@@ -33,6 +33,13 @@ class COCODataset(GeneralizedDataset):
         self._aspect_ratios = [v["width"] / v["height"] for v in self.coco.imgs.values()]
         self.check_dataset(checked_id_file)
 
+    def get_image_info(self, img_id):
+        img_id = int(img_id)
+        img_info = self.coco.imgs[img_id]
+        ann_ids = self.coco.getAnnIds(img_id)
+        anns = self.coco.loadAnns(ann_ids)
+        return img_info, anns
+
     def get_image(self, img_id):
         img_id = int(img_id)
         img_info = self.coco.imgs[img_id]

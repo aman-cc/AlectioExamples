@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
+from utils import generate_ann_hash, generate_file_hash
 from alectio_sdk.sdk.sql_client import create_database, add_index
 
 DALI = False
@@ -57,12 +58,49 @@ def create_datamap(args, data_dir='data'):
     dataset_train = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True)
 
     train_idx = dataset_train.ids
-    train_filenames = [dataset_train.get_image_filename(train_id) for train_id in train_idx]
-    # file_hashes_list = [generate_file_hash(os.path.join(file_roots[0], file), hash_type='sha256', blocksize=-1) for file in tqdm(train_filenames)]
+    filenames_list, file_hashes_list, label_hashes_list = [], [], []
+    for idx in train_idx:
+        img_info, anns = dataset_train.get_image_info(idx)
+        file_hash = generate_file_hash(os.path.join(file_roots[0], img_info['file_name']), hash_type='sha256', blocksize=-1)
+        label_hash = generate_ann_hash(anns)
 
-    datamap = dict(filename=train_filenames, index=list(range(len(train_idx))), dataset_index=train_idx)
+        filenames_list.append(img_info['file_name'])
+        file_hashes_list.append(file_hash)
+        label_hashes_list.append(label_hash)
+
+    datamap = dict(filename=filenames_list, index=list(range(len(train_idx))), dataset_index=train_idx, file_hash=file_hashes_list, label_hash=label_hashes_list)
     datamap_df = pd.DataFrame(datamap)
     return datamap_df
+
+def update_datamap(original_datamap, new_datamap):
+    if original_datamap is None:
+        return
+    # Validate all records in original_datamap with new_datamap
+    validated_indices = []
+    for i in range(original_datamap.shape[0]):
+        org_filename = original_datamap.loc[i, 'filename']
+        new_rec = new_datamap.loc[new_datamap['filename'] == org_filename]
+
+        assert original_datamap.loc[i, 'file_hash'] == new_rec['file_hash'], f"File hash mismatch for {original_datamap.loc[i, 'filename']}"
+        assert original_datamap.loc[i, 'label_hash'] == new_rec['label_hash'], f"Label mismatch for {original_datamap.loc[i, 'label_hash']}"
+        assert original_datamap.loc[i, 'dataset_index'] == new_rec['dataset_index'], f"Dataset index mismatch for {original_datamap.loc[i, 'label_hash']}"
+        validated_indices.append(new_rec['dataset_index'])
+
+    # At this point, all original records have been validated, validate new records
+    max_dataset_idx = original_datamap['dataset_index'].max()
+    max_idx = original_datamap['index'].max()
+    breakpoint()
+    new_rec_idx = set(original_datamap['index']) ^ set(new_datamap['index'])
+
+    # Validate that each of these indices are unique and have value greater than max_idx
+    validated_new_idx, validated_new_dataset_idx = [], []
+    for i in new_rec_idx:
+        assert new_datamap.loc[i, 'dataset_index'] > max_dataset_idx, f"Wrong dataset index for {new_datamap.loc[i, 'filename']} | Found: {new_datamap.loc[i, 'dataset_index']}, should be > {max_dataset_idx}"
+        assert new_datamap.loc[i, 'dataset_index'] not in validated_new_dataset_idx, f"Duplicated dataset index found for {new_datamap.loc[i, 'filename']}"
+        assert new_datamap.loc[i, 'index'] not in validated_new_idx, f"Duplicated index found for {new_datamap.loc[i, 'filename']}"
+        validated_new_dataset_idx.append(new_datamap.loc[i, 'dataset_index'])
+        validated_new_dataset_idx.append(new_datamap.loc[i, 'index'])
+    return
 
 def train(args, labeled, resume_from, ckpt_file):
     yolo_args = YoloArgs(args)
@@ -96,11 +134,12 @@ def train(args, labeled, resume_from, ckpt_file):
     file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
     ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
     datamap_loc = os.path.join(file_roots[0], 'datamap.csv')
+    datamap_df = create_datamap(args, yolo_args.data_dir)
+    org_datamap_df = None
     if os.path.isfile(datamap_loc):
-        datamap_df = pd.read_csv(datamap_loc)
-    else:
-        datamap_df = create_datamap(args, yolo_args.data_dir)
-        datamap_df.to_csv(datamap_loc, index=False)
+        org_datamap_df = pd.read_csv(datamap_loc)
+    update_datamap(org_datamap_df, datamap_df)
+    datamap_df.to_csv(datamap_loc, index=False)
     train_idx = datamap_df.loc[labeled, :]['dataset_index'].tolist()
 
     if not os.path.isdir(args["EXPT_DIR"]):
@@ -422,5 +461,5 @@ if __name__ == '__main__':
         args = yaml.safe_load(stream)
 
     train(args=args, labeled=list(range(512)), ckpt_file='ckpt', resume_from=None)
-    test(args=args, ckpt_file='ckpt')
-    infer(args=args, unlabeled=list(range(128)), ckpt_file='ckpt')
+    # test(args=args, ckpt_file='ckpt')
+    # infer(args=args, unlabeled=list(range(128)), ckpt_file='ckpt')
