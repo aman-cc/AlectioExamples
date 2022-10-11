@@ -74,33 +74,35 @@ def create_datamap(args, data_dir='data'):
 
 def update_datamap(original_datamap, new_datamap):
     if original_datamap is None:
-        return
+        return new_datamap
     # Validate all records in original_datamap with new_datamap
     validated_indices = []
     for i in range(original_datamap.shape[0]):
         org_filename = original_datamap.loc[i, 'filename']
-        new_rec = new_datamap.loc[new_datamap['filename'] == org_filename]
+        new_rec = new_datamap[new_datamap['filename'] == org_filename]
+        assert new_rec.shape[0] == 1, f"Found multiple new records for same filename: {new_rec['filename']}"
+        new_rec = new_rec.iloc[0]
 
         assert original_datamap.loc[i, 'file_hash'] == new_rec['file_hash'], f"File hash mismatch for {original_datamap.loc[i, 'filename']}"
-        assert original_datamap.loc[i, 'label_hash'] == new_rec['label_hash'], f"Label mismatch for {original_datamap.loc[i, 'label_hash']}"
-        assert original_datamap.loc[i, 'dataset_index'] == new_rec['dataset_index'], f"Dataset index mismatch for {original_datamap.loc[i, 'label_hash']}"
+        assert original_datamap.loc[i, 'label_hash'] == new_rec['label_hash'], f"Label mismatch for {original_datamap.loc[i, 'filename']}"
+        assert original_datamap.loc[i, 'dataset_index'] == int(new_rec['dataset_index']), f"Dataset index mismatch for {original_datamap.loc[i, 'label_hash']}"
         validated_indices.append(new_rec['dataset_index'])
 
     # At this point, all original records have been validated, validate new records
     max_dataset_idx = original_datamap['dataset_index'].max()
     max_idx = original_datamap['index'].max()
-    breakpoint()
     new_rec_idx = set(original_datamap['index']) ^ set(new_datamap['index'])
 
     # Validate that each of these indices are unique and have value greater than max_idx
     validated_new_idx, validated_new_dataset_idx = [], []
     for i in new_rec_idx:
-        assert new_datamap.loc[i, 'dataset_index'] > max_dataset_idx, f"Wrong dataset index for {new_datamap.loc[i, 'filename']} | Found: {new_datamap.loc[i, 'dataset_index']}, should be > {max_dataset_idx}"
-        assert new_datamap.loc[i, 'dataset_index'] not in validated_new_dataset_idx, f"Duplicated dataset index found for {new_datamap.loc[i, 'filename']}"
-        assert new_datamap.loc[i, 'index'] not in validated_new_idx, f"Duplicated index found for {new_datamap.loc[i, 'filename']}"
+        print(f"Found new sample: {new_datamap.loc[i, 'dataset_index']} | {new_datamap.loc[i, 'filename']}")
+        assert int(new_datamap.loc[i, 'dataset_index']) > max_dataset_idx, f"Wrong dataset index for {new_datamap.loc[i, 'filename']} | Found: {new_datamap.loc[i, 'dataset_index']}, should be > {max_dataset_idx}"
+        assert int(new_datamap.loc[i, 'dataset_index']) not in validated_new_dataset_idx, f"Duplicated dataset index found for {new_datamap.loc[i, 'filename']}"
+        assert int(new_datamap.loc[i, 'index']) not in validated_new_idx, f"Duplicated index found for {new_datamap.loc[i, 'filename']}"
         validated_new_dataset_idx.append(new_datamap.loc[i, 'dataset_index'])
-        validated_new_dataset_idx.append(new_datamap.loc[i, 'index'])
-    return
+        validated_new_idx.append(new_datamap.loc[i, 'index'])
+    return new_datamap
 
 def train(args, labeled, resume_from, ckpt_file):
     yolo_args = YoloArgs(args)

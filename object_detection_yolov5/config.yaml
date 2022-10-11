@@ -9,7 +9,7 @@ weightsclear: True
 ### TRAIN FUNCTION ARGS ###
 onprem: True
 train_epochs: 1
-batch_size: 64
+batch_size: 16
 lr: 0.1
 wtd: 0.0001
 momentum: 0.9
