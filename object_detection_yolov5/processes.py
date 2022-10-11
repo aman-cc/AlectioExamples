@@ -80,6 +80,8 @@ def update_datamap(original_datamap, new_datamap):
     for i in range(original_datamap.shape[0]):
         org_filename = original_datamap.loc[i, 'filename']
         new_rec = new_datamap[new_datamap['filename'] == org_filename]
+        if new_rec.empty:
+            continue
         assert new_rec.shape[0] == 1, f"Found multiple new records for same filename: {new_rec['filename']}"
         new_rec = new_rec.iloc[0]
 
@@ -91,7 +93,10 @@ def update_datamap(original_datamap, new_datamap):
     # At this point, all original records have been validated, validate new records
     max_dataset_idx = original_datamap['dataset_index'].max()
     max_idx = original_datamap['index'].max()
-    new_rec_idx = set(original_datamap['index']) ^ set(new_datamap['index'])
+    new_rec_idx = set(new_datamap['index']) - set(original_datamap['index'])
+    deleted_rec_idx = set(original_datamap['index']) - set(new_datamap['index'])
+    for i in deleted_rec_idx:
+        print(f"Deleted record: {i} | {original_datamap.loc[i, 'filename']}")
 
     # Validate that each of these indices are unique and have value greater than max_idx
     validated_new_idx, validated_new_dataset_idx = [], []
@@ -102,6 +107,7 @@ def update_datamap(original_datamap, new_datamap):
         assert int(new_datamap.loc[i, 'index']) not in validated_new_idx, f"Duplicated index found for {new_datamap.loc[i, 'filename']}"
         validated_new_dataset_idx.append(new_datamap.loc[i, 'dataset_index'])
         validated_new_idx.append(new_datamap.loc[i, 'index'])
+    print(f"Dataset validated. Found {len(deleted_rec_idx)} deleted records and {len(new_rec_idx)} new records.")
     return new_datamap
 
 def train(args, labeled, resume_from, ckpt_file):
@@ -140,7 +146,7 @@ def train(args, labeled, resume_from, ckpt_file):
     org_datamap_df = None
     if os.path.isfile(datamap_loc):
         org_datamap_df = pd.read_csv(datamap_loc)
-    update_datamap(org_datamap_df, datamap_df)
+    datamap_df = update_datamap(org_datamap_df, datamap_df)
     datamap_df.to_csv(datamap_loc, index=False)
     train_idx = datamap_df.loc[labeled, :]['dataset_index'].tolist()
 
