@@ -11,6 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 from utils import generate_ann_hash, generate_file_hash
 from alectio_sdk.sdk.sql_client import create_database, add_index
+from download_remote_storage import download_dir
 
 DALI = False
 
@@ -138,6 +139,7 @@ def train(args, labeled, resume_from, ckpt_file):
     # If you're using VOC dataset or COCO 2012 dataset, remember to revise the code
     if not os.path.isdir('data'):
         raise Exception("COCO data not download. Please download COCO using './download_coco.sh'")
+    download_dir('s3-bucket-link-test-delete', 'aman_tmp_dir', 'pascal_mini_ds')
     splits = ("train2017", "val2017")
     file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
     ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
@@ -468,6 +470,6 @@ if __name__ == '__main__':
     with open("./config.yaml", "r") as stream:
         args = yaml.safe_load(stream)
 
-    train(args=args, labeled=list(range(512)), ckpt_file='ckpt', resume_from=None)
-    # test(args=args, ckpt_file='ckpt')
+    train(args=args, labeled=list(range(32)), ckpt_file='ckpt', resume_from=None)
+    test(args=args, ckpt_file='ckpt')
     # infer(args=args, unlabeled=list(range(128)), ckpt_file='ckpt')
