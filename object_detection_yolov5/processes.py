@@ -6,8 +6,8 @@ import torch
 import yolo
 import json
 import numpy as np
+import pandas as pd
 
-from torchvision import transforms
 from tqdm import tqdm
 from alectio_sdk.sdk.sql_client import create_database, add_index
 
@@ -40,9 +40,29 @@ class YoloArgs:
         self.mosaic = None
         self.distributed = False
         self.classes = None
+        self.amp = False
         if os.path.isfile('labels.json'):
             with open('labels.json', 'r') as f:
                 self.classes = json.load(f)
+
+def create_datamap(args, data_dir='data'):
+    yolo_args = YoloArgs(args)
+    if not os.path.isdir(data_dir):
+        raise Exception("Dataset not downloaded. Please download COCO using './download_coco.sh' if using COCO.")
+
+    splits = ("train2017", "val2017")
+    file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
+    ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
+
+    dataset_train = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True)
+
+    train_idx = dataset_train.ids
+    train_filenames = [dataset_train.get_image_filename(train_id) for train_id in train_idx]
+    # file_hashes_list = [generate_file_hash(os.path.join(file_roots[0], file), hash_type='sha256', blocksize=-1) for file in tqdm(train_filenames)]
+
+    datamap = dict(filename=train_filenames, index=list(range(len(train_idx))), dataset_index=train_idx)
+    datamap_df = pd.DataFrame(datamap)
+    return datamap_df
 
 def train(args, labeled, resume_from, ckpt_file):
     yolo_args = YoloArgs(args)
@@ -57,7 +77,6 @@ def train(args, labeled, resume_from, ckpt_file):
     print("\ndevice: {}".format(device))
     
     # # Automatic mixed precision
-    yolo_args.amp = False
     if cuda and torch.__version__ >= "1.6.0":
         capability = torch.cuda.get_device_capability()[0]
         if capability >= 7: # 7 refers to RTX series GPUs, e.g. 2080Ti, 2080, Titan RTX
@@ -76,6 +95,14 @@ def train(args, labeled, resume_from, ckpt_file):
     splits = ("train2017", "val2017")
     file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
     ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
+    datamap_loc = os.path.join(file_roots[0], 'datamap.csv')
+    if os.path.isfile(datamap_loc):
+        datamap_df = pd.read_csv(datamap_loc)
+    else:
+        datamap_df = create_datamap(args, yolo_args.data_dir)
+        datamap_df.to_csv(datamap_loc, index=False)
+    train_idx = datamap_df.loc[labeled, :]['dataset_index'].tolist()
+
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
 
@@ -94,7 +121,7 @@ def train(args, labeled, resume_from, ckpt_file):
             device_id=yolo_args.gpu, world_size=yolo_args.world_size)
     else:
         transforms = yolo.RandomAffine((0, 0), (0.1, 0.1), (0.9, 1.1), (0, 0, 0, 0))
-        dataset_train = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled)
+        dataset_train = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, index_list=train_idx)
         dataset_test = yolo.datasets(yolo_args.dataset, file_roots[1], ann_files[1], train=True) # set train=True for eval
         # dataset_test = yolo.datasets(yolo_args.dataset, file_roots[0], ann_files[0], train=True, labeled=labeled) # set train=True for eval
         if len(dataset_train) < yolo_args.batch_size:
@@ -186,7 +213,19 @@ def train(args, labeled, resume_from, ckpt_file):
         if os.path.isfile(os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')):
             pre_trained_ckpt_path = os.path.join(args["EXPT_DIR"], 'yolov5s_official_2cf45318.pth')
             checkpoint = torch.load(pre_trained_ckpt_path, map_location=device) # load last checkpoint
-            model_without_ddp.load_state_dict(checkpoint)
+            if num_classes != 80:   # Different dataset tuning
+                # Remove some node's weights from loading
+                remove_head_list = [
+                    'head.predictor.mlp.0.weight',
+                    'head.predictor.mlp.0.bias',
+                    'head.predictor.mlp.1.weight',
+                    'head.predictor.mlp.1.bias',
+                    'head.predictor.mlp.2.weight',
+                    'head.predictor.mlp.2.bias',
+                ]
+                for item_ in remove_head_list:
+                    checkpoint.pop(item_)
+            model_without_ddp.load_state_dict(checkpoint, strict=False)
 
     for epoch in tqdm(range(epochs)):
         
@@ -313,7 +352,11 @@ def infer(args, unlabeled, ckpt_file=None):
     ann_file = os.path.join(yolo_args.data_dir, "annotations", "instances_train2017.json")
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
-    ds = yolo.datasets(dataset, file_root, ann_file, train=True, labeled=unlabeled)
+
+    datamap_loc = os.path.join(file_root, 'datamap.csv')
+    datamap_df = pd.read_csv(datamap_loc)
+    infer_idx = datamap_df.loc[unlabeled, :]['dataset_index'].tolist()
+    ds = yolo.datasets(dataset, file_root, ann_file, train=True, index_list=infer_idx)
     dl = torch.utils.data.DataLoader(ds, shuffle=True, collate_fn=yolo.collate_wrapper, pin_memory=cuda)
     # DataPrefetcher behaves like PyTorch's DataLoader, but it outputs CUDA tensors
     d = yolo.DataPrefetcher(dl) if cuda else dl
@@ -378,6 +421,6 @@ if __name__ == '__main__':
     with open("./config.yaml", "r") as stream:
         args = yaml.safe_load(stream)
 
-    train(args=args, labeled=list(range(128)), resume_from='ckpt', ckpt_file='ckpt')
+    train(args=args, labeled=list(range(512)), ckpt_file='ckpt', resume_from=None)
     test(args=args, ckpt_file='ckpt')
-    infer(args=args, unlabeled=list(range(128)))
+    infer(args=args, unlabeled=list(range(128)), ckpt_file='ckpt')
