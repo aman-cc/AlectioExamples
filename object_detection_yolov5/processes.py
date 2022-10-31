@@ -109,14 +109,15 @@ def update_datamap(original_datamap, new_datamap):
         validated_new_dataset_idx.append(new_datamap.loc[i, 'dataset_index'])
         validated_new_idx.append(new_datamap.loc[i, 'index'])
     print(f"Dataset validated. Found {len(deleted_rec_idx)} deleted records and {len(new_rec_idx)} new records.")
-    return new_datamap
+    return new_datamap, validated_new_idx, validated_new_dataset_idx
 
 def train(args, labeled, resume_from, ckpt_file):
+    print(f"Train indices [{len(labeled)}]:\n{labeled}")
     yolo_args = YoloArgs(args)
     yolo.setup_seed(yolo_args.seed)
     yolo.init_distributed_mode(yolo_args)
     begin_time = time.time()
-    print(time.asctime(time.localtime(begin_time)))
+    # print(time.asctime(time.localtime(begin_time)))
     
     device = torch.device("cuda" if torch.cuda.is_available() and yolo_args.use_cuda else "cpu")
     cuda = device.type == "cuda"
@@ -139,17 +140,16 @@ def train(args, labeled, resume_from, ckpt_file):
     # If you're using VOC dataset or COCO 2012 dataset, remember to revise the code
     if not os.path.isdir('data'):
         raise Exception("COCO data not download. Please download COCO using './download_coco.sh'")
-    download_dir('s3-bucket-link-test-delete', 'aman_tmp_dir', 'pascal_mini_ds')
+    # download_dir('s3-bucket-link-test-delete', 'aman_tmp_dir', 'pascal_mini_ds')
     splits = ("train2017", "val2017")
     file_roots = [os.path.join(yolo_args.data_dir, 'images', x) for x in splits]
     ann_files = [os.path.join(yolo_args.data_dir, "annotations/instances_{}.json".format(x)) for x in splits]
-    datamap_loc = os.path.join(file_roots[0], 'datamap.csv')
     datamap_df = create_datamap(args, yolo_args.data_dir)
-    org_datamap_df = None
-    if os.path.isfile(datamap_loc):
-        org_datamap_df = pd.read_csv(datamap_loc)
-    datamap_df = update_datamap(org_datamap_df, datamap_df)
-    datamap_df.to_csv(datamap_loc, index=False)
+    # org_datamap_df = None
+    # if os.path.isfile(datamap_loc):
+    #     org_datamap_df = pd.read_csv(datamap_loc)
+    # datamap_df, new_idx = update_datamap(org_datamap_df, datamap_df)
+    # datamap_df.to_csv(datamap_loc, index=False)
     train_idx = datamap_df.loc[labeled, :]['dataset_index'].tolist()
 
     if not os.path.isdir(args["EXPT_DIR"]):
@@ -402,9 +402,9 @@ def infer(args, unlabeled, ckpt_file=None):
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
 
-    datamap_loc = os.path.join(file_root, 'datamap.csv')
-    datamap_df = pd.read_csv(datamap_loc)
+    datamap_df = create_datamap(args, yolo_args.data_dir)
     infer_idx = datamap_df.loc[unlabeled, :]['dataset_index'].tolist()
+
     ds = yolo.datasets(dataset, file_root, ann_file, train=True, index_list=infer_idx)
     dl = torch.utils.data.DataLoader(ds, shuffle=True, collate_fn=yolo.collate_wrapper, pin_memory=cuda)
     # DataPrefetcher behaves like PyTorch's DataLoader, but it outputs CUDA tensors
@@ -470,6 +470,6 @@ if __name__ == '__main__':
     with open("./config.yaml", "r") as stream:
         args = yaml.safe_load(stream)
 
-    train(args=args, labeled=list(range(32)), ckpt_file='ckpt', resume_from=None)
+    train(args=args, labeled=list(range(20)), ckpt_file='ckpt', resume_from=None)
     test(args=args, ckpt_file='ckpt')
-    # infer(args=args, unlabeled=list(range(128)), ckpt_file='ckpt')
+    infer(args=args, unlabeled=list(range(20, 50)), ckpt_file='ckpt')
