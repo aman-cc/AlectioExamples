@@ -15,18 +15,6 @@ from lightgbm import LGBMClassifier
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.metrics import accuracy_score, classification_report
 
-
-def get_classification_report(model, x_test, y_test):
-    # save model
-    pred = model.predict(x_test)
-    acc_score = accuracy_score(y_true=y_test, y_pred=pred)
-    print()
-    print(strat + " classification report: ")
-    print(classification_report(y_true=y_test, y_pred=pred))
-    print()
-    print(strat + " accuracy: " + str(acc_score))
-
-
 def preprocess_data(args):
     X_train, y_train, X_test, y_test = read_vectorized_features(
         args["DATA_DIR"] + "/ember_2017_2/"
