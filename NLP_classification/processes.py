@@ -62,10 +62,10 @@ def infer(config_args, unlabeled, ckpt_file):
     pred, target, pre_softmax = __main__.main(args)
 
     outputs = {}
-    for i in range(len(unlabeled)):
-        outputs[unlabeled[i]] = {}
-        outputs[unlabeled[i]]['logits'] = pre_softmax[i]
-        outputs[unlabeled[i]]['prediction'] = pred[i]
+    for i in range(len(pre_softmax)):
+        outputs[i] = {}
+        outputs[i]['logits'] = pre_softmax[i].tolist()
+        outputs[i]['prediction'] = pred[i].tolist()
 
     return {"outputs": outputs}
 
