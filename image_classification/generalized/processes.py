@@ -54,7 +54,7 @@ def train(args, labeled, resume_from, ckpt_file):
 
     img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
     datamap_df = img_cls_obj.create_datamap()
-    trainset = ImageClassificationDataloader(datamap_df, transform=transform_train)
+    trainset = ImageClassificationDataloader(datamap_df, labeled=labeled, transform=transform_train)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=batch_size, shuffle=False, num_workers=2
     )
@@ -78,7 +78,7 @@ def train(args, labeled, resume_from, ckpt_file):
         getdatasetstate(args)
 
     net.train()
-    for epoch in tqdm(range(epochs), desc="Training"):
+    for epoch in tqdm(range(epochs), desc="Training Epoch"):
         running_loss = 0.0
         for i, data in tqdm(enumerate(trainloader), total=len(trainloader), desc='Steps'):
             images, labels = data

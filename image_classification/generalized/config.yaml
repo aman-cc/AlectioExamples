@@ -7,7 +7,7 @@ weightsclear: True
 
 ### TRAIN FUNCTION ARGS ###
 onprem: True
-train_epochs: 10
+train_epochs: 2
 batch_size: 2
 lr: 0.1
 wtd: 0.0001

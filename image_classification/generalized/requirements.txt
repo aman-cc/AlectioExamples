@@ -1,6 +1,6 @@
-torch
+torch~=1.13.0
 torchvision
 numpy
 pandas
 tqdm
-matplotlib
+pyyaml

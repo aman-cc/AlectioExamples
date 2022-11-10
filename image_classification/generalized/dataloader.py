@@ -82,8 +82,12 @@ class ImageClassificationHelper(Dataset):
         return updated_datamap, new_rec_idx, new_rec_idx
 
 class ImageClassificationDataloader:
-    def __init__(self, datamap, transform=None) -> None:
+    def __init__(self, datamap, labeled=None, transform=None) -> None:
         self.datamap = datamap
+        if labeled is not None:
+            assert self.datamap.shape[0] >= len(labeled), f"Not enough samples as per labeled list: Found samples: {self.datamap.shape[0]} | Got: {len(labeled)}"
+            self.datamap = self.datamap.loc[labeled]
+        self.labeled = labeled
         self.transform = transform
 
     def __len__(self):
