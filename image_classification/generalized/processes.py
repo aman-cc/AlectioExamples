@@ -1,0 +1,167 @@
+import os
+import yaml
+import json
+import torch
+
+import pandas as pd
+from tqdm import tqdm
+
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torchvision.models import resnet18, ResNet18_Weights
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as transforms
+
+from dataloader import ImageClassificationDataloader, ImageClassificationHelper
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+transform_test = transforms.Compose(
+    [
+        transforms.Resize(255),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        normalize,
+    ]
+)
+
+transform_train = transforms.Compose(
+    [   
+        transforms.Resize(255),
+        transforms.CenterCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ]
+)
+
+with open('labels.json', 'r') as f:
+    labels_dict = json.load(f)
+
+def getdatasetstate(args):
+    img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
+    return {k: k for k in range(len(img_cls_obj))}
+
+def train(args, labeled, resume_from, ckpt_file):
+    batch_size = args["batch_size"]
+    lr = args["lr"]
+    momentum = args["momentum"]
+    epochs = args["train_epochs"]
+    wtd = args["wtd"]
+    if not os.path.isdir(args['LOG_DIR']):
+        os.makedirs(args['LOG_DIR'])
+
+    img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
+    datamap_df = img_cls_obj.create_datamap()
+    trainset = ImageClassificationDataloader(datamap_df, transform=transform_train)
+    trainloader = torch.utils.data.DataLoader(
+        trainset, batch_size=batch_size, shuffle=False, num_workers=2
+    )
+
+    predictions, targets = [], []
+    net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
+    num_ftrs = net.fc.in_features
+    net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
+    criterion = nn.CrossEntropyLoss().to(device)
+    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum, weight_decay=wtd)
+
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[60, 90, 95], last_epoch=-1
+    )
+
+    if resume_from is not None and not args["weightsclear"]:
+        ckpt = torch.load(os.path.join(args["EXPT_DIR"], resume_from))
+        net.load_state_dict(ckpt["model"])
+        optimizer.load_state_dict(ckpt["optimizer"])
+    else:
+        getdatasetstate(args)
+
+    net.train()
+    for epoch in tqdm(range(epochs), desc="Training"):
+        running_loss = 0.0
+        for i, data in tqdm(enumerate(trainloader), total=len(trainloader), desc='Steps'):
+            images, labels = data
+            images, labels = images.to(device), labels.type(torch.LongTensor).to(device)
+
+            outputs = net(images)
+            loss = criterion(outputs, labels)
+            _, predicted = torch.max(outputs.data, 1)
+            predictions.extend(predicted.cpu().numpy().tolist())
+            targets.extend(labels.cpu().numpy().tolist())
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+        lr_scheduler.step()
+
+    ckpt = {"model": net.state_dict(), "optimizer": optimizer.state_dict()}
+    torch.save(ckpt, os.path.join(args["EXPT_DIR"], ckpt_file))
+
+def test(self, testloader):
+    net = resnet18(pretrained=False).to(device)
+    num_ftrs = net.fc.in_features
+    net.fc = nn.Linear(num_ftrs, 4).to(device)
+    net.load_state_dict(torch.load('last.pt'))
+    net.eval()
+
+    predictions, targets = [], []
+
+    with torch.no_grad():
+        for data in tqdm(testloader, desc="Testing"):
+            images, labels = data
+            images, labels = images.to(device), labels.to(device)
+            outputs = net(images)
+            _, predicted = torch.max(outputs.data, 1)
+            predictions.append(predicted.data)
+            targets.append(labels.data)
+
+    predictions = list(torch.cat(predictions).cpu().numpy())
+    targets = list(torch.cat(targets).cpu().numpy())
+
+    return {"preds": predictions, "labels":targets}
+
+def infer(self, inferloader):
+    net = resnet18(pretrained=False).to(device)
+    num_ftrs = net.fc.in_features
+    net.fc = nn.Linear(num_ftrs, 4).to(device)
+    net.load_state_dict(torch.load('last.pt'))
+    net.eval()
+    # net.train() # only for BALD
+
+    outputs_fin, k = {}, 0
+    infer_outputs = []
+
+    with torch.no_grad():
+        for i, data in tqdm(enumerate(inferloader), desc="Inferring"):
+            images, labels = data
+            images, labels = images.to(device), labels.to(device)
+
+            # niter_outputs = []
+            # for niter in range(12):
+            #     logits = net(images).cpu().numpy().tolist()
+            #     niter_outputs.append(logits)
+
+            # infer_outputs.append(niter_outputs)
+
+            outputs = net(images).data
+            _, predicted = torch.max(outputs, 1)
+
+            for j in range(len(outputs)):
+                outputs_fin[k] = {}
+                outputs_fin[k]["logits"] = outputs[j].cpu().numpy()
+                k += 1
+    # outputs_fin = {k: {'logits': val} for k, val in enumerate(infer_outputs)}        
+    return outputs_fin
+
+if __name__ == '__main__':
+    with open('config.yaml', 'r') as f:
+        args = yaml.safe_load(f)
+
+    labeled = list(range(1000))
+    resume_from = None
+    ckpt_file = "ckpt_0"
+
+    train(args, labeled=labeled, resume_from=resume_from, ckpt_file=ckpt_file)
