@@ -1,19 +1,19 @@
 import os
 import json
 
-import numpy as np
 import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset
 
 class ImageClassificationHelper(Dataset):
-    def __init__(self, data_dir:str, labels_dict:dict, verbose=False) -> None:
+    def __init__(self, data_dir:str, labels_dict:dict) -> None:
         """ Class to read image classification directory.
 
             Note: Arrange images in data_dir/<train/test>/<label_name>/*
 
         Args:
             data_dir (str): Directory where data is stored
+            labels_dict (dict): Dictionary containing labels
         """
         self.train_dir = os.path.join(data_dir, 'train')
         self.test_dir = os.path.join(data_dir, 'test')
@@ -39,7 +39,15 @@ class ImageClassificationHelper(Dataset):
                         labels_list.append(int(i))
         return files_list, labels_list
 
-    def create_datamap(self, split='train'):
+    def create_datamap(self, split='train') -> pd.DataFrame:
+        """Method to generate datamap for the dataloader.
+
+        Args:
+            split (str, optional): Either of 'train' or 'test'. Defaults to 'train'.
+
+        Returns:
+            pd.DataFrame: Dataframe containing index, filepaths and labels
+        """
         files = self.train_files if split == 'train' else self.test_files
         labels = self.train_labels if split == 'train' else self.test_labels
 
@@ -48,7 +56,19 @@ class ImageClassificationHelper(Dataset):
         return datamap_df
 
     @staticmethod
-    def update_datamap(original_datamap, new_datamap):
+    def update_datamap(original_datamap:pd.DataFrame, new_datamap:pd.DataFrame) -> pd.DataFrame:
+        """Method to update datamap based on original datamap and new datamap. If records are deleted, exception is raised. New records are appended in the end to make sure no-reranking happens.
+
+        Args:
+            original_datamap (pd.DataFrame): Original datamap
+            new_datamap (pd.DataFrame): New datamap containing new records added.
+
+        Raises:
+            Exception: If records are deleted from original datamap.
+
+        Returns:
+            pd.DataFrame: Updated datamap with new records appended in the end.
+        """
         if original_datamap is None:
             return new_datamap
 
@@ -82,7 +102,14 @@ class ImageClassificationHelper(Dataset):
         return updated_datamap, new_rec_idx, new_rec_idx
 
 class ImageClassificationDataloader:
-    def __init__(self, datamap, labeled=None, transform=None) -> None:
+    def __init__(self, datamap: pd.DataFrame, labeled:list=None, transform=None) -> None:
+        """ Dataloader class to load images and labels based on the datamap with indices in labeled list. Apply transforms also if passed.
+
+        Args:
+            datamap (pd.DataFrame): Datamap containing index, filepath and label.
+            labeled (list, optional): List of indices to select. Defaults to None.
+            transform (optional): Pytorch transform. Defaults to None.
+        """
         self.datamap = datamap
         if labeled is not None:
             assert self.datamap.shape[0] >= len(labeled), f"Not enough samples as per labeled list: Found samples: {self.datamap.shape[0]} | Got: {len(labeled)}"
