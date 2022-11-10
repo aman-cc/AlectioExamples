@@ -102,11 +102,6 @@ def train(args, labeled, resume_from, ckpt_file):
 
 def test(args, ckpt_file):
     batch_size = args["batch_size"]
-    lr = args["lr"]
-    momentum = args["momentum"]
-    epochs = args["train_epochs"]
-    wtd = args["wtd"]
-
     img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
     datamap_df = img_cls_obj.create_datamap(split='test')
     testset = ImageClassificationDataloader(datamap_df, transform=transform_test)
@@ -117,8 +112,6 @@ def test(args, ckpt_file):
     net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
     num_ftrs = net.fc.in_features
     net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
-    criterion = nn.CrossEntropyLoss().to(device)
-    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum, weight_decay=wtd)
 
     predictions, targets = [], []
     ckpt = torch.load(os.path.join(args["EXPT_DIR"], ckpt_file))
@@ -139,38 +132,37 @@ def test(args, ckpt_file):
 
     return {"predictions": predictions, "labels": targets}
 
-def infer(self, inferloader):
-    net = resnet18(pretrained=False).to(device)
+def infer(args, unlabeled, ckpt_file):
+    batch_size = args["batch_size"]
+    img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
+    datamap_df = img_cls_obj.create_datamap()
+    unlabeled_set = ImageClassificationDataloader(datamap_df, labeled=unlabeled, transform=transform_test)
+    unlabeled_loader = torch.utils.data.DataLoader(
+        unlabeled_set, batch_size=batch_size, shuffle=False, num_workers=2
+    )
+
+    net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
     num_ftrs = net.fc.in_features
-    net.fc = nn.Linear(num_ftrs, 4).to(device)
-    net.load_state_dict(torch.load('last.pt'))
-    net.eval()
-    # net.train() # only for BALD
+    net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
 
-    outputs_fin, k = {}, 0
-    infer_outputs = []
+    correct, total, k = 0, 0, 0
+    outputs_fin = {}
+    for data in tqdm(unlabeled_loader, desc="Inferring"):
+        images, labels = data
+        images, labels = images.to(device), labels.to(device)
+        outputs = net(images).data
 
-    with torch.no_grad():
-        for i, data in tqdm(enumerate(inferloader), desc="Inferring"):
-            images, labels = data
-            images, labels = images.to(device), labels.to(device)
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
 
-            # niter_outputs = []
-            # for niter in range(12):
-            #     logits = net(images).cpu().numpy().tolist()
-            #     niter_outputs.append(logits)
+        for j in range(len(outputs)):
+            outputs_fin[k] = {}
+            outputs_fin[k]["prediction"] = predicted[j].item()
+            outputs_fin[k]["pre_softmax"] = outputs[j].cpu().numpy().tolist()
+            k += 1
 
-            # infer_outputs.append(niter_outputs)
-
-            outputs = net(images).data
-            _, predicted = torch.max(outputs, 1)
-
-            for j in range(len(outputs)):
-                outputs_fin[k] = {}
-                outputs_fin[k]["logits"] = outputs[j].cpu().numpy()
-                k += 1
-    # outputs_fin = {k: {'logits': val} for k, val in enumerate(infer_outputs)}        
-    return outputs_fin
+    return {"outputs": outputs_fin}
 
 if __name__ == '__main__':
     with open('config.yaml', 'r') as f:
@@ -182,3 +174,4 @@ if __name__ == '__main__':
 
     train(args, labeled=labeled, resume_from=resume_from, ckpt_file=ckpt_file)
     test(args, ckpt_file=ckpt_file)
+    infer(args, list(range(1000, 1500)), ckpt_file=ckpt_file)

@@ -87,6 +87,7 @@ class ImageClassificationDataloader:
         if labeled is not None:
             assert self.datamap.shape[0] >= len(labeled), f"Not enough samples as per labeled list: Found samples: {self.datamap.shape[0]} | Got: {len(labeled)}"
             self.datamap = self.datamap.loc[labeled]
+            self.datamap.reset_index(inplace=True)
         self.labeled = labeled
         self.transform = transform
 
