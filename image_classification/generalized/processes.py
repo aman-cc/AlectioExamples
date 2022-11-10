@@ -100,28 +100,44 @@ def train(args, labeled, resume_from, ckpt_file):
     ckpt = {"model": net.state_dict(), "optimizer": optimizer.state_dict()}
     torch.save(ckpt, os.path.join(args["EXPT_DIR"], ckpt_file))
 
-def test(self, testloader):
-    net = resnet18(pretrained=False).to(device)
+def test(args, ckpt_file):
+    batch_size = args["batch_size"]
+    lr = args["lr"]
+    momentum = args["momentum"]
+    epochs = args["train_epochs"]
+    wtd = args["wtd"]
+
+    img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
+    datamap_df = img_cls_obj.create_datamap(split='test')
+    testset = ImageClassificationDataloader(datamap_df, transform=transform_test)
+    testloader = torch.utils.data.DataLoader(
+        testset, batch_size=batch_size, shuffle=False, num_workers=2
+    )
+
+    net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
     num_ftrs = net.fc.in_features
-    net.fc = nn.Linear(num_ftrs, 4).to(device)
-    net.load_state_dict(torch.load('last.pt'))
-    net.eval()
+    net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
+    criterion = nn.CrossEntropyLoss().to(device)
+    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum, weight_decay=wtd)
 
     predictions, targets = [], []
+    ckpt = torch.load(os.path.join(args["EXPT_DIR"], ckpt_file))
+    net.load_state_dict(ckpt["model"])
+    net.eval()
 
+    correct, total = 0, 0
     with torch.no_grad():
         for data in tqdm(testloader, desc="Testing"):
             images, labels = data
             images, labels = images.to(device), labels.to(device)
             outputs = net(images)
             _, predicted = torch.max(outputs.data, 1)
-            predictions.append(predicted.data)
-            targets.append(labels.data)
+            predictions.extend(predicted.cpu().numpy().tolist())
+            targets.extend(labels.cpu().numpy().tolist())
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
 
-    predictions = list(torch.cat(predictions).cpu().numpy())
-    targets = list(torch.cat(targets).cpu().numpy())
-
-    return {"preds": predictions, "labels":targets}
+    return {"predictions": predictions, "labels": targets}
 
 def infer(self, inferloader):
     net = resnet18(pretrained=False).to(device)
@@ -165,3 +181,4 @@ if __name__ == '__main__':
     ckpt_file = "ckpt_0"
 
     train(args, labeled=labeled, resume_from=resume_from, ckpt_file=ckpt_file)
+    test(args, ckpt_file=ckpt_file)
