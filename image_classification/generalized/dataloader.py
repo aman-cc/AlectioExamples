@@ -137,7 +137,7 @@ class ImageClassificationDataloader:
 
 if __name__ == '__main__':
 
-    dataset_path = "/home/dell/Documents/personal_repos/AlectioExamples/image_classification/weather/data"
+    dataset_path = "data"
     with open('labels.json', 'r') as f:
         labels_dict = json.load(f)
     img_cls_obj = ImageClassificationHelper(dataset_path, labels_dict)

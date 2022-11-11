@@ -8,9 +8,7 @@ from tqdm import tqdm
 
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 from torchvision.models import resnet18, ResNet18_Weights
-from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 
 from dataloader import ImageClassificationDataloader, ImageClassificationHelper
@@ -54,6 +52,7 @@ def train(args, labeled, resume_from, ckpt_file):
 
     img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
     datamap_df = img_cls_obj.create_datamap()
+    datamap_df.to_csv(os.path.join(args["DATA_DIR"], 'datamap.csv'), index=False)
     trainset = ImageClassificationDataloader(datamap_df, labeled=labeled, transform=transform_train)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=batch_size, shuffle=False, num_workers=2
@@ -135,7 +134,13 @@ def test(args, ckpt_file):
 def infer(args, unlabeled, ckpt_file):
     batch_size = args["batch_size"]
     img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
+    datamap_loc = os.path.join(args["DATA_DIR"], 'datamap.csv')
+    org_datamap = None
+    if datamap_loc:
+        org_datamap = pd.read_csv(datamap_loc)
     datamap_df = img_cls_obj.create_datamap()
+    datamap_df, _, _ = img_cls_obj.update_datamap(org_datamap, datamap_df)
+
     unlabeled_set = ImageClassificationDataloader(datamap_df, labeled=unlabeled, transform=transform_test)
     unlabeled_loader = torch.utils.data.DataLoader(
         unlabeled_set, batch_size=batch_size, shuffle=False, num_workers=2
@@ -144,6 +149,9 @@ def infer(args, unlabeled, ckpt_file):
     net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
     num_ftrs = net.fc.in_features
     net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
+    ckpt = torch.load(os.path.join(args["EXPT_DIR"], ckpt_file))
+    net.load_state_dict(ckpt["model"])
+    net.eval()
 
     correct, total, k = 0, 0, 0
     outputs_fin = {}
