@@ -1,11 +1,10 @@
 import argparse
 import yaml
-import json
 from alectio_sdk.sdk import Pipeline
 from processes import train, test, infer, getdatasetstate
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", help="Path to config.yaml", required=True)
+parser.add_argument("--config", help="Path to config.yaml", default='config.yaml')
 args = parser.parse_args()
 
 with open(args.config, "r") as stream:
@@ -23,7 +22,4 @@ App = Pipeline(
 )
 
 if __name__ == "__main__":
-    # payload = json.load(open(args["sample_payload"], "r"))
-    # app._one_loop(args=args, payload=payload)
-    # app(debug=True)
     App()

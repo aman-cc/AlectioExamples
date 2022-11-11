@@ -11,7 +11,6 @@ import pandas as pd
 from tqdm import tqdm
 from utils import generate_ann_hash, generate_file_hash
 from alectio_sdk.sdk.sql_client import create_database, add_index
-from download_remote_storage import download_dir
 
 DALI = False
 
