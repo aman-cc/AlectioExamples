@@ -2,7 +2,7 @@ EXPT_DIR : "./log"
 LOG_DIR : "./log"
 DATA_DIR : "./data"
 WEIGHTS_DIR : "./weights"
-exp_name: "weather_classification"
+exp_name: "image_classification"
 weightsclear: True
 
 ### TRAIN FUNCTION ARGS ###
