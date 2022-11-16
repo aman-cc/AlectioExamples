@@ -1,33 +1,38 @@
-from tqdm import tqdm
-import torch
-import torchvision
-import torchvision.transforms as transforms
-import pandas as pd
-import numpy as np
-from torch.utils.data import Dataset, DataLoader, Subset
-from model import NeuralNet
-import torch.optim as optim
 import os
 import yaml
+import torch
 import argparse
+import torchvision
+import numpy as np
+import pandas as pd
+import torch.optim as optim
+import torchvision.transforms as transforms
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+from tqdm import tqdm
+from torch.utils.data import Dataset, DataLoader, Subset
+from model import get_model
 
+# device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"
 
 def getdatasetstate(args={}):
     return {k: k for k in range(args["train_size"])}
-
 
 def processData(args, stageFor="train", indices=None):
 
     # images from pytorch are grey-scale 0-1 in pixel values, scale each image by subtracting a mean of 0.5,
     # and dividing by a std of 0.5 to bring the range of values between [-1, 1]
     transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
+        [
+            transforms.Resize(255),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ]
     )
     # download the data if it doesn't exisit already
 
-    if args["DATASET"] == "Fashion":
+    if args["DATASET"] == "FashionMNIST":
         print("Downloading Fashion-MNIST Data")
         trainset = torchvision.datasets.FashionMNIST(
             root="./data", train=True, transform=transform, download=True
@@ -63,15 +68,14 @@ def processData(args, stageFor="train", indices=None):
 
 def train(args, labeled, resume_from, ckpt_file):
     print("========== In the train step ==========")
-    batch_size = args["batch_size"]
     lr = args["learning_rate"]
     momentum = args["momentum"]
-    epochs = args["train_epochs"]
-    train_split = args["split_train"]
+    if not os.path.isdir(args["EXPT_DIR"]):
+        os.makedirs(args["EXPT_DIR"], exist_ok=True)
 
     loader = processData(args, stageFor="train", indices=labeled)
 
-    net = NeuralNet()
+    net = get_model('resnet18', 10)
     net = net.to(device=device)
 
     criterion = torch.nn.CrossEntropyLoss()
@@ -90,8 +94,10 @@ def train(args, labeled, resume_from, ckpt_file):
 
         running_loss = 0
 
+        correct = 0
         for i, batch in enumerate(loader, start=0):
             data, labels = batch
+            data = data.repeat(1, 3, 1, 1)
 
             data = data.to(device)
             labels = labels.to(device)
@@ -101,6 +107,8 @@ def train(args, labeled, resume_from, ckpt_file):
             loss = criterion(output, labels)
             loss.backward()
             optimizer.step()
+            _, predicted = torch.max(output.data, 1)
+            correct += (predicted == labels).float().sum()
 
             running_loss += loss.item()
 
@@ -112,6 +120,10 @@ def train(args, labeled, resume_from, ckpt_file):
                     end="\r",
                 )
                 running_loss = 0
+        
+        accuracy = 100 * correct / (len(loader) * args["batch_size"])
+        print(f"Accuracy for epoch {epoch}: {accuracy:.3f}")
+        print(f"Loss for epoch {epoch}: {loss}")
 
     print("Finished Training. Saving the model as {}".format(ckpt_file))
 
@@ -131,7 +143,7 @@ def test(args, ckpt_file):
 
     loader = processData(args, stageFor="test")
 
-    net = NeuralNet()
+    net = get_model('resnet18', 10)
     net = net.to(device=device)
 
     net.load_state_dict(
@@ -148,6 +160,7 @@ def test(args, ckpt_file):
         for step, (batch_x, batch_y) in enumerate(loader):
             with torch.no_grad():
                 batch_x = batch_x.to(device)
+                batch_x = batch_x.repeat(1, 3, 1, 1)
                 batch_y = batch_y.to(device)
 
                 prediction = net(batch_x)
@@ -181,7 +194,7 @@ def infer(args, unlabeled, ckpt_file):
 
     loader = processData(args, stageFor="infer", indices=unlabeled)
 
-    net = NeuralNet()
+    net = get_model('resnet18', 10)
     net = net.to(device=device)
 
     net.load_state_dict(
@@ -190,7 +203,7 @@ def infer(args, unlabeled, ckpt_file):
 
     net.eval()
 
-    n_val = len(unlabeled)
+    n_val = len(loader)
     predictions = {}
     predix = 0
 
@@ -198,6 +211,7 @@ def infer(args, unlabeled, ckpt_file):
         for step, (batch_x, batch_y) in enumerate(loader):
             with torch.no_grad():
                 batch_x = batch_x.to(device)
+                batch_x = batch_x.repeat(1, 3, 1, 1)
                 batch_y = batch_y.to(device)
                 prediction = net(batch_x)
 
@@ -229,7 +243,7 @@ if __name__ == "__main__":
     with open(args.config, "r") as stream:
         args = yaml.safe_load(stream)
 
-    labeled = list(range(5000))
+    labeled = list(range(500))
     resume_from = None
     ckpt_file = "ckpt_0"
 
@@ -237,4 +251,4 @@ if __name__ == "__main__":
     getdatasetstate(args=args)
     train(args=args, labeled=labeled, resume_from=resume_from, ckpt_file=ckpt_file)
     test(args=args, ckpt_file=ckpt_file)
-    infer(args=args, unlabeled=[10, 20, 30], ckpt_file=ckpt_file)
+    infer(args=args, unlabeled=list(range(500)), ckpt_file=ckpt_file)
