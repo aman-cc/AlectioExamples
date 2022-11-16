@@ -9,7 +9,7 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 
 from tqdm import tqdm
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import DataLoader, Subset
 from model import get_model
 
 # device = "cuda" if torch.cuda.is_available() else "cpu"
