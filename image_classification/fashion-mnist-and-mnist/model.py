@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
+from torchvision.models import resnet18, resnet34, resnet50, resnet101, ResNet18_Weights, ResNet34_Weights, ResNet50_Weights, ResNet101_Weights
 
 class NeuralNet(nn.Module):
     def __init__(self):
@@ -26,3 +27,24 @@ class NeuralNet(nn.Module):
         x = F.relu(self.fullCon2(x))
         x = self.fullCon3(x)
         return x
+
+def get_model(backbone='resnet18', num_classes=2, use_dropout=False):
+    if backbone == 'custom':
+        return NeuralNet()
+    elif backbone == 'resnet18':
+        net = resnet18(weights=ResNet18_Weights.DEFAULT)
+    elif backbone == 'resnet34':
+        net = resnet34(weights=ResNet34_Weights.DEFAULT)
+    elif backbone == 'resnet50':
+        net = resnet50(weights=ResNet50_Weights.DEFAULT)
+    elif backbone == 'resnet101':
+        net = resnet101(weights=ResNet101_Weights.DEFAULT)
+    num_ftrs = net.fc.in_features
+    if use_dropout:
+        del net.fc
+        net.dropout = nn.Dropout()
+    net.fc = nn.Linear(num_ftrs, num_classes)
+    return net
+
+if __name__ == '__main__':
+    model = get_model('custom', 5)
