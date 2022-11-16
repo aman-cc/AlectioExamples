@@ -4,7 +4,6 @@ import torch
 import argparse
 import torchvision
 import numpy as np
-import pandas as pd
 import torch.optim as optim
 import torchvision.transforms as transforms
 
@@ -12,8 +11,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 from model import get_model
 
-# device = "cuda" if torch.cuda.is_available() else "cpu"
-device = "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def getdatasetstate(args={}):
     return {k: k for k in range(args["train_size"])}
@@ -75,7 +73,8 @@ def train(args, labeled, resume_from, ckpt_file):
 
     loader = processData(args, stageFor="train", indices=labeled)
 
-    net = get_model('resnet18', 10)
+    backbone = args["model_backbone"]
+    net = get_model(backbone, 10)
     net = net.to(device=device)
 
     criterion = torch.nn.CrossEntropyLoss()
@@ -143,7 +142,8 @@ def test(args, ckpt_file):
 
     loader = processData(args, stageFor="test")
 
-    net = get_model('resnet18', 10)
+    backbone = args["model_backbone"]
+    net = get_model(backbone, 10)
     net = net.to(device=device)
 
     net.load_state_dict(
@@ -194,7 +194,8 @@ def infer(args, unlabeled, ckpt_file):
 
     loader = processData(args, stageFor="infer", indices=unlabeled)
 
-    net = get_model('resnet18', 10)
+    backbone = args["model_backbone"]
+    net = get_model(backbone, 10)
     net = net.to(device=device)
 
     net.load_state_dict(

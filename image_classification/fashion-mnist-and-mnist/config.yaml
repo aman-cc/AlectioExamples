@@ -6,6 +6,7 @@ exp_name: "fashion-mnist-experiment-1"
 
 ### TRAIN FUNCTION ARGS ###
 train_epochs: 20
+model_backbone: resnet18 # [resnet18, resnet34, resnet50, resnet101, custom]
 batch_size: 64
 train_size: 60000
 test_size: 10000
