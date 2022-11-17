@@ -8,11 +8,12 @@ from tqdm import tqdm
 
 import torch.nn as nn
 import torch.optim as optim
+from torchvision.models import resnet18, ResNet18_Weights
 import torchvision.transforms as transforms
 
-from model import get_model
 from dataloader import ImageClassificationDataloader, ImageClassificationHelper
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 transform_test = transforms.Compose(
     [
@@ -41,14 +42,11 @@ def getdatasetstate(args):
     return {k: k for k in range(len(img_cls_obj))}
 
 def train(args, labeled, resume_from, ckpt_file):
-    model_backbone = args["model_backbone"]
     batch_size = args["batch_size"]
     lr = args["lr"]
     momentum = args["momentum"]
     epochs = args["train_epochs"]
     wtd = args["wtd"]
-    device = args["device"]
-    verbose = args["verbose"]
     if not os.path.isdir(args['LOG_DIR']):
         os.makedirs(args['LOG_DIR'])
 
@@ -61,8 +59,9 @@ def train(args, labeled, resume_from, ckpt_file):
     )
 
     predictions, targets = [], []
-    net = get_model(backbone=model_backbone, num_classes=len(labels_dict), use_dropout=False)
-    net= net.to(device)
+    net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
+    num_ftrs = net.fc.in_features
+    net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum, weight_decay=wtd)
 
@@ -80,7 +79,6 @@ def train(args, labeled, resume_from, ckpt_file):
     net.train()
     for epoch in tqdm(range(epochs), desc="Training Epoch"):
         running_loss = 0.0
-        correct = 0
         for i, data in tqdm(enumerate(trainloader), total=len(trainloader), desc='Steps'):
             images, labels = data
             images, labels = images.to(device), labels.type(torch.LongTensor).to(device)
@@ -94,23 +92,15 @@ def train(args, labeled, resume_from, ckpt_file):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            correct += (predicted == labels).float().sum()
 
             running_loss += loss.item()
         lr_scheduler.step()
-        if verbose:
-            accuracy = 100 * correct / (len(trainloader) * batch_size)
-            print(f"Accuracy for epoch {epoch}: {accuracy:.3f}")
-            print(f"Loss for epoch {epoch}: {loss}")
 
     ckpt = {"model": net.state_dict(), "optimizer": optimizer.state_dict()}
     torch.save(ckpt, os.path.join(args["EXPT_DIR"], ckpt_file))
 
 def test(args, ckpt_file):
-    model_backbone = args["model_backbone"]
     batch_size = args["batch_size"]
-    device = args["device"]
-    verbose = args["verbose"]
     img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
     datamap_df = img_cls_obj.create_datamap(split='test')
     testset = ImageClassificationDataloader(datamap_df, transform=transform_test)
@@ -118,8 +108,9 @@ def test(args, ckpt_file):
         testset, batch_size=batch_size, shuffle=False, num_workers=2
     )
 
-    net = get_model(backbone=model_backbone, num_classes=len(labels_dict), use_dropout=False)
-    net = net.to(device)
+    net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
+    num_ftrs = net.fc.in_features
+    net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
 
     predictions, targets = [], []
     ckpt = torch.load(os.path.join(args["EXPT_DIR"], ckpt_file))
@@ -138,16 +129,10 @@ def test(args, ckpt_file):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-    if verbose:
-        accuracy = 100 * correct / (len(testloader) * batch_size)
-        print(f"Test accuracy: {accuracy:.3f}")
-
     return {"predictions": predictions, "labels": targets}
 
 def infer(args, unlabeled, ckpt_file):
-    model_backbone = args["model_backbone"]
     batch_size = args["batch_size"]
-    device = args["device"]
     img_cls_obj = ImageClassificationHelper(args["DATA_DIR"], labels_dict)
     datamap_loc = os.path.join(args["DATA_DIR"], 'datamap.csv')
     org_datamap = None
@@ -161,8 +146,9 @@ def infer(args, unlabeled, ckpt_file):
         unlabeled_set, batch_size=batch_size, shuffle=False, num_workers=2
     )
 
-    net = get_model(backbone=model_backbone, num_classes=len(labels_dict), use_dropout=True)
-    net = net.to(device)
+    net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device)
+    num_ftrs = net.fc.in_features
+    net.fc = nn.Linear(num_ftrs, len(labels_dict)).to(device)
     ckpt = torch.load(os.path.join(args["EXPT_DIR"], ckpt_file))
     net.load_state_dict(ckpt["model"])
     net.eval()
