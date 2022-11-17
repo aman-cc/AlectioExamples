@@ -161,7 +161,7 @@ def test(args, ckpt_file):
     predictions = {}
     truelabels = {}
 
-    n_val = args["test_size"]
+    n_val = len(loader)
     with tqdm(total=n_val, desc="Testing round", unit="batch", leave=False) as pbar:
         for step, (batch_x, batch_y) in enumerate(loader):
             with torch.no_grad():

@@ -4,8 +4,6 @@
 
 ### Running steps
 
-Make sure you are on the `develop` branch, with `fashion-mnist` as your working directory. 
-
 Note: If you want to run an MNIST task, set the DATASET argument in config.yaml to "MNIST", 
 otherwise if you want to run FASHION-MNIST, set the DATASET argument in config.yaml to "Fashion". 
 
@@ -15,20 +13,14 @@ of the return of `test` and `infer`. For an object detection problem, those
 returns can be a little bit involved. But to get most out of Alectio's platform,
 those returns needs to be correct. 
 
-### 1. Set up a virtual environment (optional) and install Alectio SDK
-Before getting started, please make sure you completed the [initial installation instructions](../../README.md) to set-up your environment. 
-
-To recap, the steps were setting up a virtual environment and then installing the AlectioSDK in that environment. 
-
-To install the AlectioSDK from within the current directory (`./examples/object_detection`) run:
-
+### 1. Set up a virtual environment and install Alectio SDK
+(Tested in python-3.9)
 ```
-pip install ../../.
-```
-
-Also create a directory `log` to store model checkpoints:
-```
-mkdir log
+python3.9 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install alectio-sdk
+pip install -r requirements.txt
 ```
 
 ### 2. Build Train Process
@@ -67,9 +59,6 @@ The infer process is used to apply the model to the unlabeled set to run inferen
 We will use the inferred output to estimate which of those unlabeled data will
 be most valuable to your model.
 
-Refer to main [AlectioSDK ReadMe](../../README.md) for general information regarding the 
-arguments of this process.
-
 #### Return of the Infer Process
 The return of the infer process is a dictionary
 ```python
@@ -87,7 +76,7 @@ create an experiment on the Alectio platform, you will receive a unique token th
 Copy and paste that token into the main.py file under the token field within the Pipeline object.
 ```python
 app = Pipeline(
-    name="cifar10",
+    name="FashionMNIST",
     train_fn=train,
     test_fn=test,
     infer_fn=infer,
@@ -96,6 +85,6 @@ app = Pipeline(
 )
 ```
 Once you have updated that file, execute the python file and you should be able to begin running your experiment.
-```shell script
+```
 python main.py
 ```
