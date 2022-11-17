@@ -16,14 +16,17 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 def getdatasetstate(args={}):
     return {k: k for k in range(args["train_size"])}
 
-def processData(args, stageFor="train", indices=None):
+def processData(args, stageFor="train", indices=None, resize=False):
 
     # images from pytorch are grey-scale 0-1 in pixel values, scale each image by subtracting a mean of 0.5,
     # and dividing by a std of 0.5 to bring the range of values between [-1, 1]
     transform = transforms.Compose(
         [
-            transforms.Resize(255),
-            transforms.CenterCrop(224),
+            transforms.Resize(224),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ] if resize else
+        [
             transforms.ToTensor(),
             transforms.Normalize((0.5,), (0.5,))
         ]
@@ -68,12 +71,13 @@ def train(args, labeled, resume_from, ckpt_file):
     print("========== In the train step ==========")
     lr = args["learning_rate"]
     momentum = args["momentum"]
+    backbone = args["model_backbone"]
+    resize = False if backbone == 'custom' else True
     if not os.path.isdir(args["EXPT_DIR"]):
         os.makedirs(args["EXPT_DIR"], exist_ok=True)
 
-    loader = processData(args, stageFor="train", indices=labeled)
+    loader = processData(args, stageFor="train", indices=labeled, resize=resize)
 
-    backbone = args["model_backbone"]
     net = get_model(backbone, 10)
     net = net.to(device=device)
 
@@ -96,7 +100,8 @@ def train(args, labeled, resume_from, ckpt_file):
         correct = 0
         for i, batch in enumerate(loader, start=0):
             data, labels = batch
-            data = data.repeat(1, 3, 1, 1)
+            if backbone != 'custom':
+                data = data.repeat(1, 3, 1, 1)
 
             data = data.to(device)
             labels = labels.to(device)
@@ -120,9 +125,9 @@ def train(args, labeled, resume_from, ckpt_file):
                 )
                 running_loss = 0
         
-        accuracy = 100 * correct / (len(loader) * args["batch_size"])
-        print(f"Accuracy for epoch {epoch}: {accuracy:.3f}")
-        print(f"Loss for epoch {epoch}: {loss}")
+        # accuracy = 100 * correct / (len(loader) * args["batch_size"])
+        # print(f"Accuracy for epoch {epoch}: {accuracy:.3f}")
+        # print(f"Loss for epoch {epoch}: {loss}")
 
     print("Finished Training. Saving the model as {}".format(ckpt_file))
 
@@ -139,10 +144,11 @@ def test(args, ckpt_file):
     momentum = args["momentum"]
     epochs = args["train_epochs"]
     train_split = args["split_train"]
-
-    loader = processData(args, stageFor="test")
-
     backbone = args["model_backbone"]
+    resize = False if backbone == 'custom' else True
+
+    loader = processData(args, stageFor="test", resize=resize)
+
     net = get_model(backbone, 10)
     net = net.to(device=device)
 
@@ -160,7 +166,8 @@ def test(args, ckpt_file):
         for step, (batch_x, batch_y) in enumerate(loader):
             with torch.no_grad():
                 batch_x = batch_x.to(device)
-                batch_x = batch_x.repeat(1, 3, 1, 1)
+                if backbone != 'custom':
+                    batch_x = batch_x.repeat(1, 3, 1, 1)
                 batch_y = batch_y.to(device)
 
                 prediction = net(batch_x)
@@ -191,10 +198,11 @@ def infer(args, unlabeled, ckpt_file):
     momentum = args["momentum"]
     epochs = args["train_epochs"]
     train_split = args["split_train"]
-
-    loader = processData(args, stageFor="infer", indices=unlabeled)
-
     backbone = args["model_backbone"]
+    resize = False if backbone == 'custom' else True
+
+    loader = processData(args, stageFor="infer", indices=unlabeled, resize=resize)
+
     net = get_model(backbone, 10)
     net = net.to(device=device)
 
@@ -212,7 +220,8 @@ def infer(args, unlabeled, ckpt_file):
         for step, (batch_x, batch_y) in enumerate(loader):
             with torch.no_grad():
                 batch_x = batch_x.to(device)
-                batch_x = batch_x.repeat(1, 3, 1, 1)
+                if backbone != 'custom':
+                    batch_x = batch_x.repeat(1, 3, 1, 1)
                 batch_y = batch_y.to(device)
                 prediction = net(batch_x)
 
